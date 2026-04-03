@@ -18,6 +18,15 @@ export const auth = betterAuth({
   },
   user: {
     additionalFields: {
+      role: {
+        type: "string",
+        required: false,
+      },
+      roleSelected: {
+        type: "boolean",
+        required: false,
+        defaultValue: false,
+      },
       walletAddress: {
         type: "string",
         required: false,

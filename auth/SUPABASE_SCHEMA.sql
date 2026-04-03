@@ -15,6 +15,8 @@ CREATE TABLE IF NOT EXISTS "user" (
     "updatedAt" TIMESTAMP NOT NULL DEFAULT NOW(),
     
     -- Custom fields for Bounty Platform
+    "role" TEXT,
+    "roleSelected" BOOLEAN DEFAULT false,
     "walletAddress" TEXT UNIQUE,
     "walletVerified" BOOLEAN DEFAULT false,
     "reputationScore" INTEGER DEFAULT 0,
