@@ -1,7 +1,12 @@
 import { auth } from "@/lib/auth";
 import { headers } from "next/headers";
 import { NextRequest, NextResponse } from "next/server";
-import SQLite from "better-sqlite3";
+import { Pool } from "pg";
+
+const pool = new Pool({
+  connectionString: process.env.DATABASE_URL,
+  ssl: process.env.NODE_ENV === "production" ? { rejectUnauthorized: false } : false,
+});
 
 export async function POST(request: NextRequest) {
   try {
@@ -40,7 +45,6 @@ export async function POST(request: NextRequest) {
     }
 
     // Validate Algorand wallet address format
-    // Algorand addresses are 58 characters and use base32 encoding (A-Z, 2-7)
     const algorandAddressRegex = /^[A-Z2-7]{58}$/;
 
     if (!algorandAddressRegex.test(walletAddress)) {
@@ -50,14 +54,12 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Update user with wallet info directly in SQLite
+    // Update user with wallet info directly in Postgres
     try {
-      const db = new SQLite("./sqlite.db");
-      const stmt = db.prepare(
-        "UPDATE user SET walletAddress = ?, walletVerified = ? WHERE id = ?"
+      await pool.query(
+        `UPDATE "user" SET "walletAddress" = $1, "walletVerified" = $2 WHERE id = $3`,
+        [walletAddress, true, session.user.id]
       );
-      stmt.run(walletAddress, 1, session.user.id);
-      db.close();
     } catch (updateError: any) {
       console.error("Database update error:", updateError);
       return NextResponse.json(
@@ -79,3 +81,4 @@ export async function POST(request: NextRequest) {
     );
   }
 }
+

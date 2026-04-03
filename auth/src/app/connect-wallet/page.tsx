@@ -1,68 +1,41 @@
 "use client";
 
-import { useState } from "react";
-import { useRouter } from "next/navigation";
+import Link from "next/link";
+import dynamic from "next/dynamic";
+
+const ConnectWallet = dynamic(
+  () => import("@/components/wallet/ConnectWallet").then((mod) => mod.ConnectWallet),
+  { ssr: false }
+);
 
 export default function ConnectWalletPage() {
-  const router = useRouter();
-  const [loading, setLoading] = useState(false);
-  const [walletAddress, setWalletAddress] = useState("");
-
-  const handleWalletConnect = async () => {
-    setLoading(true);
-    try {
-      // Assuming Pera Wallet or similar wallet integration.
-      // If you are using @perawallet/connect or @txnlab/use-wallet-react,
-      // trigger the sign process here, get the address, and save it.
-      
-      const addressToSave = walletAddress || "MOCKADDRESSOFLENGTH5800000000000000000000000000000000000"; // 58 chars Mock
-      
-      const res = await fetch("/api/user/update", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ walletAddress: addressToSave }),
-      });
-
-      if (res.ok) {
-        // We push to /dashboard and the middleware will redirect appropriately
-        router.push("/dashboard"); 
-      } else {
-        console.error("Failed to connect wallet via API");
-      }
-    } catch (err) {
-      console.error(err);
-    } finally {
-      setLoading(false);
-    }
-  };
 
   return (
-    <div className="min-h-screen bg-black text-white flex items-center justify-center p-4">
-      <div className="max-w-md w-full bg-gray-900/50 border border-gray-800 rounded-2xl p-8 text-center">
-        <div className="text-5xl mb-6">🔗</div>
+    <div className="min-h-screen bg-black text-white flex items-center justify-center p-4 relative">
+      {/* Background gradients */}
+      <div className="absolute top-1/4 left-1/4 w-96 h-96 bg-purple-500/10 rounded-full blur-[120px]" />
+      <div className="absolute bottom-1/4 right-1/4 w-96 h-96 bg-yellow-500/10 rounded-full blur-[120px]" />
+
+      <div className="max-w-md w-full bg-gray-900/50 border border-gray-800 rounded-2xl p-8 shadow-2xl flex flex-col items-center relative z-10">
+        <div className="w-16 h-16 bg-gradient-to-br from-[#ffee55] to-[#f59e0b] rounded-2xl flex items-center justify-center mb-6 shadow-lg shadow-yellow-500/20">
+          <span className="text-3xl text-black">🔗</span>
+        </div>
         <h1 className="text-3xl font-bold mb-4 bg-clip-text text-transparent bg-gradient-to-r from-[#ffee55] to-[#f59e0b]">
           Connect Wallet
         </h1>
-        <p className="text-gray-400 mb-8">
+        <p className="text-gray-400 mb-8 text-center text-sm font-medium">
           To finalize your account securely, connect your Pera Wallet to lock or receive ALGO rewards.
         </p>
 
-        {/* Temporary input to simulate connecting. Replace with real Pera SDK button */}
-        <input 
-          type="text"
-          placeholder="Paste real Pera Wallet here (or mock one will be used)"
-          value={walletAddress}
-          onChange={(e) => setWalletAddress(e.target.value)}
-          className="w-full p-4 mb-4 rounded-lg bg-black border border-gray-800 text-white focus:outline-none focus:border-[#ffee55] transition-colors"
-        />
+        {/* This will render their beautiful QR Code modal automatically! */}
+        <ConnectWallet />
         
-        <button
-          onClick={handleWalletConnect}
-          disabled={loading}
-          className="w-full py-4 px-6 bg-[#ffee55] hover:bg-[#e6d64c] text-black font-bold rounded-xl transition-all duration-300 text-lg shadow-[0_0_20px_rgba(255,238,85,0.3)] hover:shadow-[0_0_30px_rgba(255,238,85,0.5)]"
+        <Link 
+          href="/dashboard"
+          className="mt-8 text-sm font-semibold py-3 px-6 bg-white/10 hover:bg-white/20 rounded-xl transition-all w-full text-center"
         >
-          {loading ? "Connecting..." : "Connect Pera Wallet"}
-        </button>
+          Continue to Dashboard →
+        </Link>
       </div>
     </div>
   );
