@@ -29,6 +29,19 @@ export default function Home() {
           <div className="space-y-6">
             <SignInButton />
 
+            <div className="pt-2">
+              <a 
+                href="/transparency" 
+                className="w-full inline-flex items-center justify-center gap-2 px-6 py-3 bg-slate-900 border border-slate-700 hover:bg-slate-800 text-white font-bold rounded-xl transition-all shadow-lg"
+              >
+                📊 Transparency Dashboard
+                <span className="text-[10px] bg-blue-500/20 text-blue-400 px-1.5 py-0.5 rounded uppercase font-black">Public</span>
+              </a>
+              <p className="text-[10px] text-gray-500 text-center mt-2 uppercase tracking-tighter">
+                No Login Required • Project-wide Metrics
+              </p>
+            </div>
+
             {/* Features */}
             <div className="space-y-3 pt-6 border-t border-gray-200">
               <div className="flex items-start gap-3">
@@ -69,6 +82,11 @@ export default function Home() {
           <p className="text-white/70 text-sm">
             🔒 Secure authentication with GitHub OAuth
           </p>
+          <div className="mt-2 pt-2 border-t border-white/5 flex items-center justify-center gap-4 text-[10px] text-white/30 uppercase tracking-widest">
+            <span>Algorand TestNet</span>
+            <span>•</span>
+            <span>Public Data Engine</span>
+          </div>
         </div>
       </div>
     </div>

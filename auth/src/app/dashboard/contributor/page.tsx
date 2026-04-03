@@ -2,6 +2,7 @@ import { auth } from "@/lib/auth";
 import { headers } from "next/headers";
 import { redirect } from "next/navigation";
 import { Pool } from "pg";
+import { ParticipateButton, SubmitWorkButton } from "@/components/bounty/ContributorActions";
 
 const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
@@ -32,29 +33,60 @@ export default async function ContributorDashboardPage() {
 
   const userId = session.user.id;
 
-  // All open bounties for marketplace (exclude ones already claimed by others when max reached)
+  // All open bounties for marketplace
   const marketplaceResult = await pool.query(
     `SELECT * FROM bounties WHERE status = 'OPEN' ORDER BY "createdAt" DESC`
   );
   const marketplaceBounties = marketplaceResult.rows;
 
-  // Bounties where this contributor has claimed/submitted
-  const myBountiesResult = await pool.query(
+  // Get this contributor's claims (participations)
+  let myClaims: Record<string, any> = {};
+  try {
+    const claimsResult = await pool.query(
+      `SELECT c.*, b."issueTitle", b."issueDescription", b."issueUrl", b."rewardAlgo", 
+              b."repoOwner", b."repoName", b."issueNumber", b.status as bounty_status, b."escrowAppId"
+       FROM claims c
+       JOIN bounties b ON c.bounty_id = b.id
+       WHERE c.contributor_id = $1
+       ORDER BY c.claimed_at DESC`,
+      [userId]
+    );
+    claimsResult.rows.forEach((c: any) => {
+      myClaims[c.bounty_id] = c;
+    });
+  } catch { /* claims table may not exist */ }
+
+  // Get this contributor's submissions
+  let mySubmissions: Record<string, any> = {};
+  try {
+    const submissionsResult = await pool.query(
+      `SELECT * FROM submissions WHERE contributor_id = $1`,
+      [userId]
+    );
+    submissionsResult.rows.forEach((s: any) => {
+      mySubmissions[s.bounty_id] = s;
+    });
+  } catch { /* submissions table may not exist */ }
+
+  // Also check old-style bounties where contributorId is set (backward compat)
+  const myOldBountiesResult = await pool.query(
     `SELECT * FROM bounties 
      WHERE "contributorId" = $1 AND status NOT IN ('CANCELLED', 'OPEN')
      ORDER BY "claimedAt" DESC NULLS LAST`,
     [userId]
   );
-  const myBounties = myBountiesResult.rows;
+  const myOldBounties = myOldBountiesResult.rows;
 
-  // Reputation & earnings from user table
+  // Build participated bounties list (from claims)
+  const participatedBountyIds = Object.keys(myClaims);
+
+  // Stats
   const userResult = await pool.query(
     `SELECT "reputationScore", "bountiesCompleted" FROM "user" WHERE id = $1`,
     [userId]
   );
   const userStats = userResult.rows[0] || {};
 
-  // Total earned from settled bounties this user won
   const earnedResult = await pool.query(
     `SELECT COALESCE(SUM("rewardAlgo"), 0) as total 
      FROM bounties WHERE "contributorId" = $1 AND status = 'SETTLED'`,
@@ -62,13 +94,11 @@ export default async function ContributorDashboardPage() {
   );
   const totalEarned = parseFloat(earnedResult.rows[0]?.total || 0);
 
-  const isComplete = (s: string) => s === 'SETTLED';
   const stats = {
-    activeClaims: myBounties.filter((b: any) => ["CLAIMED", "IN_PROGRESS"].includes(b.status)).length,
-    pendingReview: myBounties.filter((b: any) => ["SUBMITTED"].includes(b.status)).length,
+    activeParticipations: participatedBountyIds.length,
+    pendingSubmissions: Object.values(mySubmissions).filter((s: any) => s.status === "pending").length,
     totalEarned,
     reputation: userStats.reputationScore ?? 0,
-    completed: userStats.bountiesCompleted ?? 0,
   };
 
   return (
@@ -93,10 +123,10 @@ export default async function ContributorDashboardPage() {
         {/* Stats */}
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
           {[
-            { label: "Active Claims",   value: stats.activeClaims,              color: "text-blue-400" },
-            { label: "Pending Review",  value: stats.pendingReview,             color: "text-yellow-400" },
-            { label: "Total Earned",    value: `${stats.totalEarned.toFixed(2)} ALGO`, color: "text-[#ffee55]" },
-            { label: "Reputation",      value: stats.reputation,                color: "text-emerald-400" },
+            { label: "Active Participations", value: stats.activeParticipations,  color: "text-blue-400" },
+            { label: "Pending Submissions",   value: stats.pendingSubmissions,    color: "text-yellow-400" },
+            { label: "Total Earned",          value: `${stats.totalEarned.toFixed(2)} ALGO`, color: "text-[#ffee55]" },
+            { label: "Reputation",            value: stats.reputation,            color: "text-emerald-400" },
           ].map(s => (
             <div key={s.label} className="bg-gray-900/50 border border-gray-800 rounded-2xl p-5">
               <p className="text-gray-500 text-xs font-medium uppercase tracking-wider mb-2">{s.label}</p>
@@ -105,69 +135,112 @@ export default async function ContributorDashboardPage() {
           ))}
         </div>
 
-        {/* My Active Bounties */}
-        {myBounties.length > 0 && (
+        {/* My Participated Bounties */}
+        {participatedBountyIds.length > 0 && (
           <section className="mb-10">
-            <h2 className="text-xl font-bold mb-4">My Bounties</h2>
+            <h2 className="text-xl font-bold mb-4">My Participated Bounties</h2>
             <div className="space-y-4">
-              {myBounties.map((b: any) => {
-                const style = STATUS_CONFIG[b.status] ?? STATUS_CONFIG["OPEN"];
-                const title = b.issueTitle || b.issueUrl || "Untitled Bounty";
+              {participatedBountyIds.map((bountyId) => {
+                const claim = myClaims[bountyId];
+                const submission = mySubmissions[bountyId];
+                const title = claim.issueTitle || claim.issueUrl || "Untitled Bounty";
+                const bountyStatus = claim.bounty_status || "OPEN";
+                const style = STATUS_CONFIG[bountyStatus] ?? STATUS_CONFIG["OPEN"];
 
                 return (
-                  <div key={b.id} className="bg-gray-900/40 border border-gray-800 hover:border-cyan-800/50 rounded-2xl p-6 transition-all">
+                  <div key={bountyId} className="bg-gray-900/40 border border-gray-800 hover:border-cyan-800/50 rounded-2xl p-6 transition-all">
                     <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
                       <div className="flex-1 min-w-0">
                         <div className="flex items-center gap-3 mb-2 flex-wrap">
                           <span className={`text-xs font-semibold px-3 py-1 rounded-full ${style.bg} ${style.text}`}>
                             ● {style.label}
                           </span>
-                          <span className="text-[#ffee55] font-bold">{b.rewardAlgo} ALGO</span>
+                          <span className="text-[#ffee55] font-bold">{claim.rewardAlgo} ALGO</span>
+                          {claim.status === "submitted" && (
+                            <span className="text-xs bg-blue-500/10 text-blue-400 px-2 py-0.5 rounded-full border border-blue-500/20">
+                              PR Submitted
+                            </span>
+                          )}
                         </div>
                         <h3 className="font-bold text-lg leading-tight truncate">{title}</h3>
-                        {b.issueDescription && (
-                          <p className="text-gray-500 text-sm mt-1 line-clamp-2">{b.issueDescription}</p>
+                        {claim.issueDescription && (
+                          <p className="text-gray-500 text-sm mt-1 line-clamp-2">{claim.issueDescription}</p>
                         )}
-                        {b.repoOwner && (
-                          <p className="text-gray-600 text-xs mt-2">📁 {b.repoOwner}/{b.repoName} #{b.issueNumber}</p>
+                        {claim.repoOwner && (
+                          <p className="text-gray-600 text-xs mt-2">📁 {claim.repoOwner}/{claim.repoName} #{claim.issueNumber}</p>
                         )}
                       </div>
 
                       <div className="shrink-0">
-                        {(b.status === "CLAIMED" || b.status === "IN_PROGRESS") && (
-                          <button className="px-5 py-2.5 bg-blue-600 hover:bg-blue-500 text-white font-semibold rounded-xl transition-colors text-sm w-full md:w-auto">
-                            Submit Work →
-                          </button>
-                        )}
-                        {(b.status === "SUBMITTED" || b.status === "UNDER_REVIEW") && (
+                        {!submission ? (
+                          <SubmitWorkButton bountyId={bountyId} bountyTitle={title} />
+                        ) : submission.status === "pending" ? (
                           <div className="px-5 py-2.5 bg-yellow-500/10 text-yellow-400 font-semibold rounded-xl text-sm text-center border border-yellow-500/20">
-                            ⏳ Awaiting Admin Review
+                            ⏳ Awaiting Review
                           </div>
-                        )}
-                        {(b.status === "SETTLED") && (
+                        ) : submission.status === "validated" && submission.rank && submission.rank <= 3 ? (
                           <div className="px-5 py-2.5 bg-emerald-500/10 text-emerald-400 font-semibold rounded-xl text-sm text-center border border-emerald-500/20">
-                            ✅ Reward Paid!
+                            🏆 Ranked #{submission.rank} — Score: {submission.ai_quality_score}%
                           </div>
-                        )}
-                        {b.status === "DISPUTED" && (
-                          <button className="px-5 py-2.5 bg-orange-500/10 text-orange-400 font-semibold rounded-xl text-sm border border-orange-500/20 hover:bg-orange-500/20 transition-colors">
-                            ⚠ Submit Evidence
-                          </button>
+                        ) : submission.status === "validated" ? (
+                          <div className="px-5 py-2.5 bg-gray-500/10 text-gray-400 font-semibold rounded-xl text-sm text-center border border-gray-500/20">
+                            Scored: {submission.ai_quality_score}% (Rank #{submission.rank})
+                          </div>
+                        ) : submission.status === "winner" ? (
+                          <div className="px-5 py-2.5 bg-[#ffee55]/10 text-[#ffee55] font-semibold rounded-xl text-sm text-center border border-[#ffee55]/20">
+                            🎉 Winner! Reward Incoming
+                          </div>
+                        ) : (
+                          <div className="px-5 py-2.5 bg-gray-500/10 text-gray-400 font-semibold rounded-xl text-sm text-center border border-gray-500/20">
+                            {submission.status}
+                          </div>
                         )}
                       </div>
                     </div>
 
                     {/* Show PR if submitted */}
-                    {b.prUrl && (
-                      <div className="mt-4 pt-4 border-t border-gray-800 flex items-center gap-2 text-sm flex-wrap">
-                        <span className="text-gray-500">Your PR:</span>
-                        <a href={b.prUrl} target="_blank" rel="noopener noreferrer"
-                          className="text-blue-400 hover:underline truncate max-w-xs">{b.prUrl}</a>
-                        {b.mlScores && (
-                          <span className="text-xs bg-emerald-500/10 text-emerald-400 px-2 py-0.5 rounded border border-emerald-500/20">
-                            AI Score: {(b.mlScores as any)?.overall ?? "N/A"}%
-                          </span>
+                    {submission?.pr_url && (
+                      <div className="mt-4 pt-4 border-t border-gray-800">
+                        <div className="flex items-center gap-2 text-sm flex-wrap mb-2">
+                          <span className="text-gray-500">Your PR:</span>
+                          <a href={submission.pr_url} target="_blank" rel="noopener noreferrer"
+                            className="text-blue-400 hover:underline truncate max-w-xs">{submission.pr_url}</a>
+                          {submission.ai_quality_score != null && (
+                            <span className="text-xs bg-emerald-500/10 text-emerald-400 px-2 py-0.5 rounded border border-emerald-500/20">
+                              AI Score: {submission.ai_quality_score}%
+                            </span>
+                          )}
+                        </div>
+                        {submission.documentation && (
+                          <p className="text-gray-500 text-xs line-clamp-2 mt-1">📝 {submission.documentation}</p>
                         )}
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          </section>
+        )}
+
+        {/* Legacy: Old-style bounties (backward compat) */}
+        {myOldBounties.length > 0 && (
+          <section className="mb-10">
+            <h2 className="text-xl font-bold mb-4">Legacy Bounties</h2>
+            <div className="space-y-4">
+              {myOldBounties.map((b: any) => {
+                const style = STATUS_CONFIG[b.status] ?? STATUS_CONFIG["OPEN"];
+                const title = b.issueTitle || b.issueUrl || "Untitled Bounty";
+                return (
+                  <div key={b.id} className="bg-gray-900/40 border border-gray-800 rounded-2xl p-6">
+                    <div className="flex items-center gap-3 mb-2">
+                      <span className={`text-xs font-semibold px-3 py-1 rounded-full ${style.bg} ${style.text}`}>● {style.label}</span>
+                      <span className="text-[#ffee55] font-bold">{b.rewardAlgo} ALGO</span>
+                    </div>
+                    <h3 className="font-bold text-lg leading-tight truncate">{title}</h3>
+                    {b.prUrl && (
+                      <div className="mt-3 text-sm text-gray-500">
+                        PR: <a href={b.prUrl} target="_blank" className="text-blue-400 hover:underline">{b.prUrl}</a>
                       </div>
                     )}
                   </div>
@@ -194,7 +267,7 @@ export default async function ContributorDashboardPage() {
             <div className="grid md:grid-cols-2 xl:grid-cols-3 gap-4">
               {marketplaceBounties.map((b: any) => {
                 const title = b.issueTitle || b.issueUrl || "Untitled Bounty";
-                const alreadyClaimed = b.contributorId === userId;
+                const alreadyParticipating = !!myClaims[b.id];
 
                 return (
                   <div key={b.id} className="bg-gray-900/40 border border-gray-800 hover:border-green-800/60 rounded-2xl p-6 transition-all flex flex-col gap-3">
@@ -221,14 +294,12 @@ export default async function ContributorDashboardPage() {
                       </a>
                     )}
 
-                    {alreadyClaimed ? (
-                      <div className="w-full py-2.5 bg-blue-600/10 text-blue-400 font-semibold rounded-xl text-sm text-center border border-blue-500/20">
-                        ✓ You Claimed This
+                    {alreadyParticipating ? (
+                      <div className="w-full py-2.5 bg-cyan-500/10 text-cyan-400 font-semibold rounded-xl text-sm text-center border border-cyan-500/20">
+                        ✓ Participating
                       </div>
                     ) : (
-                      <button className="w-full py-2.5 bg-gradient-to-r from-cyan-600 to-blue-700 hover:from-cyan-500 hover:to-blue-600 text-white font-bold rounded-xl transition-all text-sm shadow-lg shadow-blue-900/20">
-                        Claim Bounty →
-                      </button>
+                      <ParticipateButton bountyId={b.id} />
                     )}
                   </div>
                 );

@@ -2,15 +2,14 @@ import { auth } from "@/lib/auth";
 import { headers } from "next/headers";
 import { redirect } from "next/navigation";
 import { Pool } from "pg";
-import { PostBountyForm } from "@/components/bounty/PostBountyForm";
+import Link from "next/link";
+import { ConnectWallet, PostBountyForm } from "@/components/DashboardClient";
 
 const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
   ssl: process.env.NODE_ENV === "production" ? { rejectUnauthorized: false } : false,
 });
 
-// Maps both old enum (OPEN/CLAIMED/SUBMITTED/SETTLED/CANCELLED) 
-// and new states to display config
 const STATUS_CONFIG: Record<string, { bg: string; text: string; label: string }> = {
   DRAFT:        { bg: "bg-gray-500/20",    text: "text-gray-400",    label: "Draft" },
   OPEN:         { bg: "bg-green-500/20",   text: "text-green-400",   label: "Open" },
@@ -35,21 +34,29 @@ export default async function AdminDashboardPage() {
   if (!session) redirect("/login");
   if ((session.user as any).role !== "admin") redirect("/dashboard/contributor");
 
-  // Fetch bounties using ACTUAL column names from the existing table
+  // Fetch bounties
   const bountiesResult = await pool.query(
     `SELECT * FROM bounties WHERE "creatorId" = $1 ORDER BY "createdAt" DESC`,
     [session.user.id]
   );
   const bounties = bountiesResult.rows;
 
-  // Safely try to get claim counts (table may not exist yet)
-  let claimCounts: Record<string, number> = {};
+  // Get participation counts per bounty from claims table
+  let participantCounts: Record<string, number> = {};
+  let submissionCounts: Record<string, number> = {};
   try {
     const claimsResult = await pool.query(
-      `SELECT "bounty_id", COUNT(*) as cnt FROM claims WHERE status = 'active' GROUP BY "bounty_id"`
+      `SELECT bounty_id, COUNT(*) as cnt FROM claims GROUP BY bounty_id`
     );
-    claimsResult.rows.forEach((r: any) => { claimCounts[r.bounty_id] = parseInt(r.cnt); });
-  } catch (_) { /* claims table may not exist yet */ }
+    claimsResult.rows.forEach((r: any) => { participantCounts[r.bounty_id] = parseInt(r.cnt); });
+  } catch { /* claims table may not exist */ }
+
+  try {
+    const subsResult = await pool.query(
+      `SELECT bounty_id, COUNT(*) as cnt FROM submissions GROUP BY bounty_id`
+    );
+    subsResult.rows.forEach((r: any) => { submissionCounts[r.bounty_id] = parseInt(r.cnt); });
+  } catch { /* submissions table may not exist */ }
 
   // Analytics
   const isActive = (s: string) => ["OPEN", "CLAIMED", "IN_PROGRESS"].includes(s);
@@ -76,11 +83,16 @@ export default async function AdminDashboardPage() {
           <span className="font-bold text-lg">BountyChain</span>
           <span className="text-xs bg-purple-500/20 text-purple-400 px-2 py-0.5 rounded-full font-medium border border-purple-500/30">Admin</span>
         </div>
-        <div className="flex items-center gap-3">
-          <span className="text-gray-500 text-sm hidden md:block">{session.user.email}</span>
-          {session.user.image && (
-            <img src={session.user.image} alt="" className="w-8 h-8 rounded-full border-2 border-gray-700" />
-          )}
+        <div className="flex items-center gap-4">
+          <div className="hidden sm:block">
+            <ConnectWallet />
+          </div>
+          <div className="flex items-center gap-3">
+            <span className="text-gray-500 text-sm hidden lg:block">{session.user.email}</span>
+            {session.user.image && (
+              <img src={session.user.image} alt="" className="w-8 h-8 rounded-full border-2 border-gray-700" />
+            )}
+          </div>
         </div>
       </header>
 
@@ -88,7 +100,7 @@ export default async function AdminDashboardPage() {
         {/* Title */}
         <div className="mb-8">
           <h1 className="text-3xl font-bold">Admin Dashboard</h1>
-          <p className="text-gray-500 mt-1">Manage your bounties and review contributor submissions</p>
+          <p className="text-gray-500 mt-1">Manage your bounties, view submissions, and run ML analysis</p>
         </div>
 
         {/* Stats */}
@@ -137,7 +149,8 @@ export default async function AdminDashboardPage() {
               {bounties.map((b: any) => {
                 const style = STATUS_CONFIG[b.status] || STATUS_CONFIG["OPEN"];
                 const title = b.issueTitle || b.issueUrl || "Untitled Bounty";
-                const claimCount = claimCounts[b.id] ?? (b.contributorId ? 1 : 0);
+                const pCount = participantCounts[b.id] ?? 0;
+                const sCount = submissionCounts[b.id] ?? 0;
 
                 return (
                   <div key={b.id} className="bg-gray-900/40 border border-gray-800 hover:border-gray-700 rounded-2xl p-6 transition-all">
@@ -157,7 +170,8 @@ export default async function AdminDashboardPage() {
                         <div className="flex items-center gap-4 text-xs text-gray-600 flex-wrap">
                           {b.repoOwner && <span>📁 {b.repoOwner}/{b.repoName}</span>}
                           {b.issueNumber && <span>#{b.issueNumber}</span>}
-                          <span>Claims: {claimCount}</span>
+                          <span className="text-purple-400">👥 {pCount} participants</span>
+                          <span className="text-blue-400">📄 {sCount} submissions</span>
                           {b.escrowAppId && <span>Escrow: {b.escrowAppId}</span>}
                           <span>Posted {new Date(b.createdAt).toLocaleDateString()}</span>
                         </div>
@@ -165,27 +179,31 @@ export default async function AdminDashboardPage() {
 
                       {/* Right: Actions */}
                       <div className="flex gap-2 flex-wrap shrink-0">
+                        {/* Activity Button — always visible */}
+                        <Link
+                          href={`/dashboard/admin/bounty/${b.id}`}
+                          className="text-xs bg-purple-600/20 text-purple-400 hover:bg-purple-600/30 px-3 py-2 rounded-lg font-medium transition-colors border border-purple-500/20 flex items-center gap-1"
+                        >
+                          📊 View Activity
+                          {pCount > 0 && (
+                            <span className="bg-purple-500/30 text-purple-300 px-1.5 py-0.5 rounded text-[10px] font-bold ml-1">
+                              {pCount}
+                            </span>
+                          )}
+                        </Link>
+
                         {b.status === "OPEN" && (
-                          <>
-                            <a href={b.issueUrl} target="_blank" rel="noopener noreferrer"
-                              className="text-xs bg-gray-700 hover:bg-gray-600 text-white px-3 py-2 rounded-lg font-medium transition-colors">
-                              View Issue ↗
-                            </a>
-                            <button className="text-xs bg-blue-600/20 text-blue-400 hover:bg-blue-600/30 px-3 py-2 rounded-lg font-medium transition-colors border border-blue-500/20">
-                              View Claims ({claimCount})
-                            </button>
-                          </>
-                        )}
-                        {b.status === "CLAIMED" && (
-                          <button className="text-xs bg-blue-600 hover:bg-blue-500 text-white px-3 py-2 rounded-lg font-medium transition-colors">
-                            View Claimant
-                          </button>
+                          <a href={b.issueUrl} target="_blank" rel="noopener noreferrer"
+                            className="text-xs bg-gray-700 hover:bg-gray-600 text-white px-3 py-2 rounded-lg font-medium transition-colors">
+                            View Issue ↗
+                          </a>
                         )}
                         {(b.status === "SUBMITTED" || b.status === "UNDER_REVIEW") && (
                           <>
-                            <button className="text-xs bg-yellow-500 hover:bg-yellow-400 text-black px-3 py-2 rounded-lg font-bold transition-colors">
-                              Review Submission
-                            </button>
+                            <Link href={`/dashboard/admin/bounty/${b.id}`}
+                              className="text-xs bg-yellow-500 hover:bg-yellow-400 text-black px-3 py-2 rounded-lg font-bold transition-colors">
+                              Review Submissions
+                            </Link>
                             <button className="text-xs bg-emerald-600 hover:bg-emerald-500 text-white px-3 py-2 rounded-lg font-medium transition-colors">
                               Approve
                             </button>
@@ -210,7 +228,7 @@ export default async function AdminDashboardPage() {
                       </div>
                     </div>
 
-                    {/* Submission info if exists */}
+                    {/* Submission info if exists (legacy prUrl) */}
                     {b.prUrl && (
                       <div className="mt-4 pt-4 border-t border-gray-800 flex items-center gap-3 flex-wrap">
                         <span className="text-xs text-gray-500">PR Submitted:</span>
@@ -218,7 +236,7 @@ export default async function AdminDashboardPage() {
                           className="text-xs text-blue-400 hover:text-blue-300 underline">{b.prUrl}</a>
                         {b.mlScores && (
                           <span className="text-xs bg-emerald-500/10 text-emerald-400 px-2 py-0.5 rounded border border-emerald-500/20">
-                            AI Score: {(b.mlScores as any)?.overall ?? "N/A"}%
+                            AI Score: {(b.mlScores as any)?.overall_score ?? "N/A"}%
                           </span>
                         )}
                       </div>
