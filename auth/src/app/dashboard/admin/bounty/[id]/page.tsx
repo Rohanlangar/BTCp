@@ -59,7 +59,7 @@ export default async function AdminBountyActivityPage({ params }: { params: Prom
   let submissions: any[] = [];
   try {
     const { rows } = await pool.query(
-      `SELECT s.*, u."name" as contributor_name, u."email" as contributor_email, u."image" as contributor_image
+      `SELECT s.*, u."name" as contributor_name, u."email" as contributor_email, u."image" as contributor_image, u."walletAddress" as contributor_wallet
        FROM submissions s
        JOIN "user" u ON s.contributor_id = u.id
        WHERE s.bounty_id = $1
@@ -184,6 +184,8 @@ export default async function AdminBountyActivityPage({ params }: { params: Prom
           bountyId={bountyId}
           initialSubmissions={submissions}
           bountyStatus={bounty.status}
+          escrowAppId={bounty.escrowAppId}
+          registryBountyId={bounty.registryBountyId}
         />
 
         {/* Activity Log */}

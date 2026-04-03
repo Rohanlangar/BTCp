@@ -1,12 +1,14 @@
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
+import { useBountyContracts } from "@/hooks/useBountyContracts";
 
 interface Submission {
   id: string;
   contributor_id: string;
   contributor_name: string;
   contributor_email: string;
+  contributor_wallet?: string;
   contributor_image: string | null;
   pr_url: string;
   documentation: string;
@@ -64,10 +66,14 @@ export function AdminBountyActivityClient({
   bountyId,
   initialSubmissions,
   bountyStatus,
+  escrowAppId,
+  registryBountyId,
 }: {
   bountyId: string;
   initialSubmissions: Submission[];
   bountyStatus: string;
+  escrowAppId?: number;
+  registryBountyId?: number;
 }) {
   const [submissions] = useState(initialSubmissions);
   const [rankings, setRankings] = useState<RankedResult[] | null>(null);
@@ -86,6 +92,8 @@ export function AdminBountyActivityClient({
   const [mergeStatus, setMergeStatus] = useState<{ merged: boolean; state: string; merged_at: string | null } | null>(null);
   const [mergeError, setMergeError] = useState<string | null>(null);
 
+  const { settleBounty, loading: contractLoading, error: contractError, successMsg: contractSuccess } = useBountyContracts();
+
   // Check health on mount
   useEffect(() => {
     fetch("/api/bounties/health").then(res => res.json()).then(data => {
@@ -103,7 +111,7 @@ export function AdminBountyActivityClient({
           contributor_id: acceptedSub.contributor_id,
           contributor_name: acceptedSub.contributor_name,
           contributor_email: acceptedSub.contributor_email,
-          contributor_wallet: null,
+          contributor_wallet: acceptedSub.contributor_wallet || null,
           submission_id: acceptedSub.id,
           pr_url: acceptedSub.pr_url,
           score: acceptedSub.ai_quality_score || 0,
@@ -232,6 +240,28 @@ export function AdminBountyActivityClient({
     }
   };
 
+  const handleSettle = useCallback(async () => {
+    if (!escrowAppId || !registryBountyId || !winner?.contributor_wallet) {
+      setAcceptError("Missing contract ID, registry ID, or contributor wallet to settle.");
+      return;
+    }
+    try {
+      await settleBounty(bountyId, escrowAppId, registryBountyId, winner.contributor_wallet);
+      setCurrentStatus("SETTLED");
+    } catch (err: any) {
+      // error is already handled by hook state!
+    }
+  }, [escrowAppId, registryBountyId, winner, settleBounty, bountyId]);
+
+  const [hasAutoPrompted, setHasAutoPrompted] = useState(false);
+
+  useEffect(() => {
+    if (currentStatus === "AWAITING_SETTLEMENT" && escrowAppId && registryBountyId && winner?.contributor_wallet && !hasAutoPrompted) {
+      setHasAutoPrompted(true);
+      handleSettle();
+    }
+  }, [currentStatus, escrowAppId, registryBountyId, winner, hasAutoPrompted, handleSettle]);
+
   // Can the admin accept a winner? Only when bounty is SUBMITTED (ML has run)
   const canAcceptWinner = ["SUBMITTED", "UNDER_REVIEW"].includes(currentStatus) && !winner;
 
@@ -250,14 +280,14 @@ export function AdminBountyActivityClient({
               <div className="flex items-center gap-2 mb-4">
                 <span className="text-2xl">🏆</span>
                 <h2 className="text-lg font-bold text-white">
-                  {currentStatus === "AWAITING_SETTLEMENT" ? "Winner Confirmed — PR Merged" : "Winner Selected"}
+                  {currentStatus === "SETTLED" ? "Bounty Settled & Paid" : currentStatus === "AWAITING_SETTLEMENT" ? "Winner Confirmed — PR Merged" : "Winner Selected"}
                 </h2>
                 <span className={`text-xs px-2.5 py-1 rounded-full font-bold ml-auto ${
-                  currentStatus === "AWAITING_SETTLEMENT"
+                  (currentStatus === "AWAITING_SETTLEMENT" || currentStatus === "SETTLED")
                     ? "bg-emerald-500/20 text-emerald-400 border border-emerald-500/30"
                     : "bg-green-500/20 text-green-400 border border-green-500/30"
                 }`}>
-                  {currentStatus === "AWAITING_SETTLEMENT" ? "✅ Merged" : "⏳ Awaiting Merge"}
+                  {currentStatus === "SETTLED" ? "✅ Paid" : currentStatus === "AWAITING_SETTLEMENT" ? "✅ Merged" : "⏳ Awaiting Merge"}
                 </span>
               </div>
 
@@ -357,15 +387,43 @@ export function AdminBountyActivityClient({
                       )}
                     </p>
                   </div>
-                  <button
-                    disabled
-                    className="px-5 py-2.5 bg-gradient-to-r from-emerald-600/50 to-cyan-600/50 text-white/60 font-medium rounded-xl text-sm cursor-not-allowed flex items-center gap-2"
-                  >
-                    💰 Send Payment — Contract Integration Coming Soon
-                  </button>
+                  {contractLoading ? (
+                    <div className="flex items-center gap-2 p-3 bg-blue-500/10 border border-blue-500/20 rounded-lg text-blue-400 text-sm">
+                      <span className="w-4 h-4 border-2 border-current border-t-transparent rounded-full animate-spin" />
+                      Initiating automatic settlement... Please check your wallet to approve the transaction.
+                    </div>
+                  ) : contractError ? (
+                    <div className="p-3 bg-red-500/10 border border-red-500/20 rounded-lg text-red-400 text-sm mt-3 flex flex-col gap-2">
+                      <span>❌ Transaction failed or was rejected: {contractError}</span>
+                      <button onClick={handleSettle} className="px-4 py-2 bg-red-500/20 hover:bg-red-500/30 text-red-300 rounded-lg self-start border border-red-500/30 transition-colors">
+                        Retry Settlement
+                      </button>
+                    </div>
+                  ) : (
+                    <div className="flex items-center gap-2 p-3 bg-blue-500/10 border border-blue-500/20 rounded-lg text-blue-400 text-sm">
+                      <span className="w-4 h-4 border-2 border-current border-t-transparent rounded-full animate-spin" />
+                      Preparing transaction...
+                    </div>
+                  )}
                   <p className="text-gray-600 text-xs">
-                    The smart contract settlement will automatically transfer {winner.score ? "the bounty reward" : "funds"} to the winner&apos;s wallet.
+                    The smart contract settlement automatically transfers the bounty reward to the winner&apos;s wallet.
                   </p>
+                </div>
+              )}
+              {currentStatus === "SETTLED" && (
+                <div className="space-y-3">
+                  <div className="p-4 bg-emerald-500/10 border border-emerald-500/20 rounded-xl text-emerald-400 flex items-center gap-3">
+                    <span className="text-2xl">💰</span>
+                    <div>
+                      <p className="font-bold">Payment Sent Successfully</p>
+                      <p className="text-sm opacity-80 mt-0.5">The smart contract has transferred the funds to {winner.contributor_wallet}.</p>
+                    </div>
+                  </div>
+                  {contractSuccess && (
+                     <div className="p-3 bg-emerald-500/10 border border-emerald-500/20 rounded-lg text-emerald-400 text-sm mt-3">
+                      ✅ {contractSuccess}
+                    </div>
+                  )}
                 </div>
               )}
             </div>

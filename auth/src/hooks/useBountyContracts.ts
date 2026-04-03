@@ -222,13 +222,51 @@ export function useBountyContracts() {
     }
   }, [activeAddress, signTransactions]);
 
+  const settleBounty = useCallback(async (supabaseBountyId: string, escrowAppId: number, registryBountyId: number, contributorAddress: string) => {
+    if (!activeAddress || !signTransactions) throw new Error("Wallet not ready");
+    setLoading(true);
+    setError(null);
+    setSuccessMsg(null);
+    try {
+      const registryAppId = algorand.getRegistryAppId();
+      
+      const maintainerAddress = await algorand.readGlobalStateBytes(registryAppId, "maintainerAddress", true);
+      if (!maintainerAddress) throw new Error("Failed to read maintainer address from Registry");
+
+      const txn = await algorand.buildSettleBountyTxn(activeAddress, escrowAppId, registryAppId, contributorAddress, maintainerAddress, registryBountyId);
+      const encodedTxn = new Uint8Array(algosdk.encodeUnsignedTransaction(txn));
+      const signedTxns = await signTransactions([encodedTxn]);
+      const validTxns = signedTxns.filter((t): t is Uint8Array => t !== null);
+      if (validTxns.length === 0) throw new Error("Settle signature rejected");
+      
+      const client = algorand.getAlgodClient();
+      const res = await client.sendRawTransaction(validTxns).do();
+      await algosdk.waitForConfirmation(client, res.txid, 4);
+      
+      const dbRes = await fetch(`/api/bounties/${escrowAppId}/settle`, { 
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ settledTxnId: res.txid })
+      });
+      if (!dbRes.ok) throw new Error("Failed to sync settlement with database");
+
+      setSuccessMsg("Success! Bounty settled and funds transferred to contributor.");
+    } catch (err: any) {
+      setError(err.message || "Failed to settle bounty on-chain");
+      throw err;
+    } finally {
+      setLoading(false);
+    }
+  }, [activeAddress, signTransactions]);
+
   return useMemo(() => ({
     isConnected,
     createBounty,
     claimBounty,
     submitWork,
+    settleBounty,
     loading,
     error,
     successMsg
-  }), [isConnected, createBounty, claimBounty, submitWork, loading, error, successMsg]);
+  }), [isConnected, createBounty, claimBounty, submitWork, settleBounty, loading, error, successMsg]);
 }
