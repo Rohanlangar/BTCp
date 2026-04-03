@@ -1,12 +1,6 @@
-import { auth } from "@/lib/auth";
+import { auth, pool } from "@/lib/auth";
 import { headers } from "next/headers";
 import { NextRequest, NextResponse } from "next/server";
-import { Pool } from "pg";
-
-const pool = new Pool({
-  connectionString: process.env.DATABASE_URL,
-  ssl: process.env.NODE_ENV === "production" ? { rejectUnauthorized: false } : false,
-});
 
 export async function POST(request: NextRequest) {
   try {
@@ -54,16 +48,29 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Update user with wallet info directly in Postgres
+    // Update user with wallet info in PostgreSQL
     try {
-      await pool.query(
-        `UPDATE "user" SET "walletAddress" = $1, "walletVerified" = $2 WHERE id = $3`,
-        [walletAddress, true, session.user.id]
-      );
+      // 1. Transactionally update:
+      // Clear this wallet from anyone else who might have it (since walletAddress column must be unique)
+      const clearOtherUsersQuery = `
+        UPDATE "user" 
+        SET "walletAddress" = NULL, "walletVerified" = FALSE 
+        WHERE "walletAddress" = $1 AND id != $2
+      `;
+      await pool.query(clearOtherUsersQuery, [walletAddress, session.user.id]);
+
+      // 2. Now link it to the current user
+      const query = `
+        UPDATE "user" 
+        SET "walletAddress" = $1, "walletVerified" = $2 
+        WHERE id = $3
+      `;
+      const values = [walletAddress, true, session.user.id];
+      await pool.query(query, values);
     } catch (updateError: any) {
-      console.error("Database update error:", updateError);
+      console.error("Postgres update error:", updateError);
       return NextResponse.json(
-        { error: "Failed to update wallet in database" },
+        { error: "Failed to update wallet in database: " + updateError.message },
         { status: 500 }
       );
     }
@@ -81,4 +88,3 @@ export async function POST(request: NextRequest) {
     );
   }
 }
-
