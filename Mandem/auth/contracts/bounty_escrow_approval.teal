@@ -1,0 +1,733 @@
+#pragma version 10
+txn ApplicationID
+int 0
+==
+bnz main_l33
+txn OnCompletion
+int OptIn
+==
+bnz main_l32
+txn OnCompletion
+int CloseOut
+==
+bnz main_l31
+txn OnCompletion
+int UpdateApplication
+==
+bnz main_l30
+txn OnCompletion
+int DeleteApplication
+==
+bnz main_l29
+txna ApplicationArgs 0
+byte "registerWithRegistry"
+==
+bnz main_l28
+txna ApplicationArgs 0
+byte "depositReward"
+==
+bnz main_l27
+txna ApplicationArgs 0
+byte "claimBounty"
+==
+bnz main_l26
+txna ApplicationArgs 0
+byte "submitWork"
+==
+bnz main_l25
+txna ApplicationArgs 0
+byte "settleBounty"
+==
+bnz main_l24
+txna ApplicationArgs 0
+byte "rejectWork"
+==
+bnz main_l23
+txna ApplicationArgs 0
+byte "claimStale"
+==
+bnz main_l22
+txna ApplicationArgs 0
+byte "cancelBounty"
+==
+bnz main_l14
+err
+main_l14:
+txn Sender
+byte "bountyCreator"
+app_global_get
+==
+// Only creator can cancel
+assert
+byte "status"
+app_global_get
+store 2
+load 2
+int 0
+==
+bnz main_l21
+load 2
+int 1
+==
+global LatestTimestamp
+byte "deadline"
+app_global_get
+>
+&&
+bnz main_l20
+int 1
+bnz main_l18
+err
+main_l18:
+int 0
+return
+main_l19:
+int 1
+return
+main_l20:
+byte "status"
+int 4
+app_global_put
+itxn_begin
+int pay
+itxn_field TypeEnum
+byte "bountyCreator"
+app_global_get
+itxn_field Receiver
+byte "rewardAmount"
+app_global_get
+byte "platformFeeAmount"
+app_global_get
++
+itxn_field Amount
+byte "bountyCreator"
+app_global_get
+itxn_field CloseRemainderTo
+int 0
+itxn_field Fee
+itxn_submit
+itxn_begin
+int appl
+itxn_field TypeEnum
+byte "registryAppId"
+app_global_get
+itxn_field ApplicationID
+int NoOp
+itxn_field OnCompletion
+byte "updateStatus"
+itxn_field ApplicationArgs
+byte "bountyId"
+app_global_get
+itob
+itxn_field ApplicationArgs
+int 4
+itob
+itxn_field ApplicationArgs
+int 0
+itxn_field Fee
+itxn_submit
+b main_l19
+main_l21:
+byte "status"
+int 4
+app_global_put
+itxn_begin
+int pay
+itxn_field TypeEnum
+byte "bountyCreator"
+app_global_get
+itxn_field Receiver
+byte "rewardAmount"
+app_global_get
+byte "platformFeeAmount"
+app_global_get
++
+itxn_field Amount
+byte "bountyCreator"
+app_global_get
+itxn_field CloseRemainderTo
+int 0
+itxn_field Fee
+itxn_submit
+itxn_begin
+int appl
+itxn_field TypeEnum
+byte "registryAppId"
+app_global_get
+itxn_field ApplicationID
+int NoOp
+itxn_field OnCompletion
+byte "updateStatus"
+itxn_field ApplicationArgs
+byte "bountyId"
+app_global_get
+itob
+itxn_field ApplicationArgs
+int 4
+itob
+itxn_field ApplicationArgs
+int 0
+itxn_field Fee
+itxn_submit
+b main_l19
+main_l22:
+txn Sender
+byte "contributorAddress"
+app_global_get
+==
+// Only contributor can claim stale
+assert
+byte "status"
+app_global_get
+int 2
+==
+// Can only claim stale on submitted work
+assert
+global LatestTimestamp
+byte "disputeDeadline"
+app_global_get
+>
+// Dispute window not yet expired
+assert
+byte "status"
+int 3
+app_global_put
+int 1
+byte "maintainerAddress"
+app_global_get_ex
+store 8
+store 7
+load 8
+// Failed to read maintainer
+assert
+load 7
+store 4
+itxn_begin
+int pay
+itxn_field TypeEnum
+byte "contributorAddress"
+app_global_get
+itxn_field Receiver
+byte "rewardAmount"
+app_global_get
+itxn_field Amount
+int 0
+itxn_field Fee
+itxn_submit
+itxn_begin
+int pay
+itxn_field TypeEnum
+load 4
+itxn_field Receiver
+byte "platformFeeAmount"
+app_global_get
+itxn_field Amount
+int 0
+itxn_field Fee
+itxn_submit
+itxn_begin
+int appl
+itxn_field TypeEnum
+byte "registryAppId"
+app_global_get
+itxn_field ApplicationID
+int NoOp
+itxn_field OnCompletion
+byte "updateStatus"
+itxn_field ApplicationArgs
+byte "bountyId"
+app_global_get
+itob
+itxn_field ApplicationArgs
+int 3
+itob
+itxn_field ApplicationArgs
+int 0
+itxn_field Fee
+itxn_submit
+itxn_begin
+int pay
+itxn_field TypeEnum
+byte "bountyCreator"
+app_global_get
+itxn_field Receiver
+int 0
+itxn_field Amount
+byte "bountyCreator"
+app_global_get
+itxn_field CloseRemainderTo
+int 0
+itxn_field Fee
+itxn_submit
+int 1
+return
+main_l23:
+txn Sender
+byte "bountyCreator"
+app_global_get
+==
+// Only creator can reject work
+assert
+byte "status"
+app_global_get
+int 2
+==
+// Can only reject submitted work
+assert
+global LatestTimestamp
+byte "disputeDeadline"
+app_global_get
+<
+// Cannot reject after dispute window
+assert
+txna ApplicationArgs 1
+len
+int 10
+>=
+// Feedback must be at least 10 characters
+assert
+byte "status"
+int 1
+app_global_put
+byte "prUrl"
+byte ""
+app_global_put
+byte "disputeDeadline"
+int 0
+app_global_put
+txna ApplicationArgs 1
+log
+itxn_begin
+int appl
+itxn_field TypeEnum
+byte "registryAppId"
+app_global_get
+itxn_field ApplicationID
+int NoOp
+itxn_field OnCompletion
+byte "updateStatus"
+itxn_field ApplicationArgs
+byte "bountyId"
+app_global_get
+itob
+itxn_field ApplicationArgs
+int 1
+itob
+itxn_field ApplicationArgs
+int 0
+itxn_field Fee
+itxn_submit
+int 1
+return
+main_l24:
+txn Sender
+byte "bountyCreator"
+app_global_get
+==
+// Only creator can settle
+assert
+byte "status"
+app_global_get
+int 2
+==
+// Can only settle submitted work
+assert
+byte "status"
+int 3
+app_global_put
+int 1
+byte "maintainerAddress"
+app_global_get_ex
+store 8
+store 7
+load 8
+// Failed to read maintainer
+assert
+load 7
+store 4
+itxn_begin
+int pay
+itxn_field TypeEnum
+byte "contributorAddress"
+app_global_get
+itxn_field Receiver
+byte "rewardAmount"
+app_global_get
+itxn_field Amount
+int 0
+itxn_field Fee
+itxn_submit
+itxn_begin
+int pay
+itxn_field TypeEnum
+load 4
+itxn_field Receiver
+byte "platformFeeAmount"
+app_global_get
+itxn_field Amount
+int 0
+itxn_field Fee
+itxn_submit
+itxn_begin
+int appl
+itxn_field TypeEnum
+byte "registryAppId"
+app_global_get
+itxn_field ApplicationID
+int NoOp
+itxn_field OnCompletion
+byte "updateStatus"
+itxn_field ApplicationArgs
+byte "bountyId"
+app_global_get
+itob
+itxn_field ApplicationArgs
+int 3
+itob
+itxn_field ApplicationArgs
+int 0
+itxn_field Fee
+itxn_submit
+itxn_begin
+int pay
+itxn_field TypeEnum
+byte "bountyCreator"
+app_global_get
+itxn_field Receiver
+int 0
+itxn_field Amount
+byte "bountyCreator"
+app_global_get
+itxn_field CloseRemainderTo
+int 0
+itxn_field Fee
+itxn_submit
+int 1
+return
+main_l25:
+txn Sender
+byte "contributorAddress"
+app_global_get
+==
+// Only contributor can submit work
+assert
+byte "status"
+app_global_get
+int 1
+==
+// Work can only be submitted after claiming
+assert
+global LatestTimestamp
+byte "deadline"
+app_global_get
+<
+// Cannot submit after deadline
+assert
+txna ApplicationArgs 1
+len
+int 0
+>
+// PR URL cannot be empty
+assert
+txna ApplicationArgs 1
+int 0
+byte "https://github.com/"
+len
+extract3
+byte "https://github.com/"
+==
+// PR URL must start with https://github.com/
+assert
+byte "prUrl"
+txna ApplicationArgs 1
+app_global_put
+byte "status"
+int 2
+app_global_put
+byte "disputeDeadline"
+global LatestTimestamp
+int 604800
++
+app_global_put
+itxn_begin
+int appl
+itxn_field TypeEnum
+byte "registryAppId"
+app_global_get
+itxn_field ApplicationID
+int NoOp
+itxn_field OnCompletion
+byte "updateStatus"
+itxn_field ApplicationArgs
+byte "bountyId"
+app_global_get
+itob
+itxn_field ApplicationArgs
+int 2
+itob
+itxn_field ApplicationArgs
+int 0
+itxn_field Fee
+itxn_submit
+int 1
+return
+main_l26:
+byte "status"
+app_global_get
+int 0
+==
+// Bounty must be open to claim
+assert
+txn Sender
+byte "bountyCreator"
+app_global_get
+!=
+// Creator cannot claim own bounty
+assert
+global LatestTimestamp
+byte "deadline"
+app_global_get
+<
+// Cannot claim expired bounty
+assert
+byte "rewardAmount"
+app_global_get
+int 0
+>
+// Cannot claim before funds deposited
+assert
+byte "contributorAddress"
+txn Sender
+app_global_put
+byte "status"
+int 1
+app_global_put
+itxn_begin
+int appl
+itxn_field TypeEnum
+byte "registryAppId"
+app_global_get
+itxn_field ApplicationID
+int NoOp
+itxn_field OnCompletion
+byte "updateStatus"
+itxn_field ApplicationArgs
+byte "bountyId"
+app_global_get
+itob
+itxn_field ApplicationArgs
+int 1
+itob
+itxn_field ApplicationArgs
+int 0
+itxn_field Fee
+itxn_submit
+int 1
+return
+main_l27:
+txn Sender
+byte "bountyCreator"
+app_global_get
+==
+// Only creator can deposit reward
+assert
+byte "status"
+app_global_get
+int 0
+==
+// Bounty must be open for deposit
+assert
+global GroupSize
+int 2
+==
+// Must be atomic group of 2
+assert
+gtxn 1 TypeEnum
+int pay
+==
+// Second txn must be payment
+assert
+gtxn 1 Receiver
+global CurrentApplicationAddress
+==
+// Payment must go to this escrow
+assert
+gtxn 1 Amount
+int 500000
+>=
+// Minimum deposit is 0.5 ALGO
+assert
+int 1
+byte "platformFeeBps"
+app_global_get_ex
+store 6
+store 5
+load 6
+// Failed to read fee bps
+assert
+load 5
+store 3
+gtxn 1 Amount
+store 0
+load 0
+load 3
+*
+int 10000
+/
+store 1
+byte "platformFeeAmount"
+load 1
+app_global_put
+byte "rewardAmount"
+load 0
+load 1
+-
+app_global_put
+itxn_begin
+int appl
+itxn_field TypeEnum
+byte "registryAppId"
+app_global_get
+itxn_field ApplicationID
+int NoOp
+itxn_field OnCompletion
+byte "updateRewardAmount"
+itxn_field ApplicationArgs
+byte "bountyId"
+app_global_get
+itob
+itxn_field ApplicationArgs
+byte "rewardAmount"
+app_global_get
+itob
+itxn_field ApplicationArgs
+int 0
+itxn_field Fee
+itxn_submit
+int 1
+return
+main_l28:
+txn Sender
+byte "bountyCreator"
+app_global_get
+==
+// Only creator can register
+assert
+byte "bountyId"
+app_global_get
+int 0
+==
+// Already registered
+assert
+itxn_begin
+int appl
+itxn_field TypeEnum
+byte "registryAppId"
+app_global_get
+itxn_field ApplicationID
+int NoOp
+itxn_field OnCompletion
+byte "registerBounty"
+itxn_field ApplicationArgs
+byte "issueUrl"
+app_global_get
+itxn_field ApplicationArgs
+int 0
+itob
+itxn_field ApplicationArgs
+txn Sender
+itxn_field Accounts
+int 0
+itxn_field Fee
+itxn_submit
+int 1
+byte "totalBounties"
+app_global_get_ex
+store 10
+store 9
+load 10
+// Failed to read bountyId
+assert
+byte "bountyId"
+load 9
+app_global_put
+int 1
+return
+main_l29:
+int 0
+return
+main_l30:
+int 0
+return
+main_l31:
+int 0
+return
+main_l32:
+int 1
+return
+main_l33:
+txna ApplicationArgs 2
+btoi
+global LatestTimestamp
+int 86400
++
+>
+// Deadline must be at least 24 hours in the future
+assert
+txna ApplicationArgs 1
+len
+byte "https://github.com/"
+len
+>
+// Issue URL too short
+assert
+txna ApplicationArgs 1
+int 0
+byte "https://github.com/"
+len
+extract3
+byte "https://github.com/"
+==
+// Issue URL must start with https://github.com/
+assert
+byte "registryAppId"
+txna ApplicationArgs 0
+btoi
+app_global_put
+byte "issueUrl"
+txna ApplicationArgs 1
+app_global_put
+byte "deadline"
+txna ApplicationArgs 2
+btoi
+app_global_put
+byte "createdAt"
+global LatestTimestamp
+app_global_put
+byte "bountyCreator"
+txn Sender
+app_global_put
+byte "status"
+int 0
+app_global_put
+byte "rewardAmount"
+int 0
+app_global_put
+byte "platformFeeAmount"
+int 0
+app_global_put
+byte "prUrl"
+byte ""
+app_global_put
+byte "contributorAddress"
+int 32
+bzero
+app_global_put
+byte "disputeDeadline"
+int 0
+app_global_put
+byte "bountyId"
+int 0
+app_global_put
+int 1
+return
