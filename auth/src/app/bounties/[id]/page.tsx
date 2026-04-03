@@ -56,6 +56,8 @@ export default async function BountyDetail({ params }: { params: Promise<{ id: s
     OPEN: "bg-emerald-500/10 text-emerald-400 border-emerald-500/20",
     CLAIMED: "bg-amber-500/10 text-amber-400 border-amber-500/20",
     SUBMITTED: "bg-blue-500/10 text-blue-400 border-blue-500/20",
+    ACCEPTED: "bg-teal-500/10 text-teal-400 border-teal-500/20",
+    AWAITING_SETTLEMENT: "bg-indigo-500/10 text-indigo-400 border-indigo-500/20",
     SETTLED: "bg-slate-500/10 text-slate-400 border-slate-500/20",
   };
   const badgeClass = statusColors[bounty.status] || statusColors.OPEN;
@@ -154,7 +156,7 @@ export default async function BountyDetail({ params }: { params: Promise<{ id: s
           <BountyInteraction bounty={bounty} />
 
           {/* ML Validation Analysis (visible for submitted/under_review/settled) */}
-          {["SUBMITTED", "UNDER_REVIEW", "SETTLED"].includes(bounty.status) && (
+          {["SUBMITTED", "UNDER_REVIEW", "ACCEPTED", "AWAITING_SETTLEMENT", "SETTLED"].includes(bounty.status) && (
             <div className="mt-12 pt-12 border-t border-white/10">
               <h2 className="text-2xl font-bold text-white mb-6 flex items-center gap-3">
                 <span className="w-8 h-8 bg-blue-500/20 rounded-lg flex items-center justify-center text-blue-400 text-sm">AI</span>

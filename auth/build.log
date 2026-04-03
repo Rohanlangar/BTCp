@@ -1,0 +1,114 @@
+﻿
+> auth@0.1.0 build
+> next build
+
+node.exe : ΓÜá Warning: 
+Next.js inferred your 
+workspace root, but it 
+may not be correct.
+At line:1 char:1
++ & "C:\Program 
+Files\nodejs/node.exe" 
+"C:\Program 
+Files\nodejs/node_mo ...
++ ~~~~~~~~~~~~~~~~~~~~~~~~
+~~~~~~~~~~~~~~~~~~~~~~~~~~
+~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo        
+      : NotSpecified: (Γ  
+  Üá Warning: Ne...not    
+ be correct.:String) [    
+], RemoteException
+    + FullyQualifiedError 
+   Id : NativeCommandErr  
+  or
+ 
+ We detected multiple 
+lockfiles and selected 
+the directory of 
+E:\everything related to h
+ackathon\PVG-Hackathon-mai
+n\package-lock.json as 
+the root directory.
+ To silence this warning, 
+set `turbopack.root` in 
+your Next.js config, or 
+consider removing one of 
+the lockfiles if it's not 
+needed.
+   See https://nextjs.org/
+docs/app/api-reference/con
+fig/next-config-js/turbopa
+ck#root-directory for 
+more information.
+ Detected additional 
+lockfiles: 
+   * E:\everything 
+related to hackathon\PVG-H
+ackathon-main\auth\package
+-lock.json
+
+Γû▓ Next.js 16.2.2 (Turbopack)
+- Environments: .env.local
+
+  Creating an optimized production build ...
+Γ£ô Compiled successfully in 10.9s
+  Running TypeScript ...
+  Finished TypeScript in 10.5s ...
+  Collecting page data using 7 workers ...
+  Generating static pages using 7 workers (0/24) ...
+  Generating static pages using 7 workers (6/24) 
+  Generating static pages using 7 workers (12/24) 
+  Generating static pages using 7 workers (18/24) 
+Γ£ô Generating static pages using 7 workers (24/24) in 1055ms
+  Finalizing page optimization ...
+
+Route (app)
+Γöî Γùï /
+Γö£ Γùï /_not-found
+Γö£ ╞Æ /api/auth/[...all]
+Γö£ ╞Æ /api/bounties/[id]/accept
+Γö£ ╞Æ /api/bounties/[id]/check-merge
+Γö£ ╞Æ /api/bounties/[id]/claim
+Γö£ ╞Æ /api/bounties/[id]/settle
+Γö£ ╞Æ /api/bounties/[id]/submissions
+Γö£ ╞Æ /api/bounties/[id]/submit
+Γö£ ╞Æ /api/bounties/[id]/validate
+Γö£ ╞Æ /api/bounties/[id]/validate-all
+Γö£ ╞Æ /api/bounties/claim
+Γö£ ╞Æ /api/bounties/create
+Γö£ ╞Æ /api/bounties/health
+Γö£ ╞Æ /api/bounties/list
+Γö£ ╞Æ /api/bounties/participate
+Γö£ ╞Æ /api/bounties/submit
+Γö£ ╞Æ /api/bounty/[id]
+Γö£ ╞Æ /api/bounty/[id]/activity
+Γö£ ╞Æ /api/bounty/[id]/cancel
+Γö£ ╞Æ /api/bounty/[id]/claim
+Γö£ ╞Æ /api/bounty/[id]/claims
+Γö£ ╞Æ /api/bounty/[id]/publish
+Γö£ ╞Æ /api/bounty/[id]/withdraw
+Γö£ ╞Æ /api/bounty/create
+Γö£ ╞Æ /api/bounty/list
+Γö£ ╞Æ /api/contracts/compile
+Γö£ ╞Æ /api/github/pr-status
+Γö£ ╞Æ /api/public/transparency
+Γö£ ╞Æ /api/user/update
+Γö£ ╞Æ /api/user/verify-wallet
+Γö£ ╞Æ /bounties
+Γö£ ╞Æ /bounties/[id]
+Γö£ Γùï /choose-role
+Γö£ Γùï /connect-wallet
+Γö£ ╞Æ /dashboard
+Γö£ ╞Æ /dashboard/admin
+Γö£ ╞Æ /dashboard/admin/bounty/[id]
+Γö£ ╞Æ /dashboard/contributor
+Γö£ ╞Æ /login
+Γöö ╞Æ /transparency
+
+
+╞Æ Proxy (Middleware)
+
+Γùï  (Static)   prerendered as static content
+╞Æ  (Dynamic)  server-rendered on demand
+

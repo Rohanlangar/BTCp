@@ -61,6 +61,8 @@ function BountyCard({ bounty }: { bounty: any }) {
     OPEN: "bg-emerald-500/10 text-emerald-400 border-emerald-500/20",
     CLAIMED: "bg-amber-500/10 text-amber-400 border-amber-500/20",
     SUBMITTED: "bg-blue-500/10 text-blue-400 border-blue-500/20",
+    ACCEPTED: "bg-teal-500/10 text-teal-400 border-teal-500/20",
+    AWAITING_SETTLEMENT: "bg-indigo-500/10 text-indigo-400 border-indigo-500/20",
     SETTLED: "bg-slate-500/10 text-slate-400 border-slate-500/20",
   };
 

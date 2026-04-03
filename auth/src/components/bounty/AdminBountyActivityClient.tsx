@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 
 interface Submission {
   id: string;
@@ -20,6 +20,7 @@ interface Submission {
 
 interface RankedResult {
   submission_id: string;
+  contributor_id: string;
   contributor_name: string;
   contributor_email: string;
   contributor_image: string | null;
@@ -31,6 +32,17 @@ interface RankedResult {
   rank: number;
   report: any;
   error?: string;
+}
+
+interface WinnerInfo {
+  contributor_id: string;
+  contributor_name: string;
+  contributor_email: string;
+  contributor_wallet: string | null;
+  submission_id: string;
+  pr_url: string;
+  score: number;
+  rank: number;
 }
 
 const RANK_CONFIG: Record<number, { badge: string; border: string; bg: string; text: string; label: string }> = {
@@ -51,9 +63,11 @@ function ScoreBar({ score, color }: { score: number; color?: string }) {
 export function AdminBountyActivityClient({
   bountyId,
   initialSubmissions,
+  bountyStatus,
 }: {
   bountyId: string;
   initialSubmissions: Submission[];
+  bountyStatus: string;
 }) {
   const [submissions] = useState(initialSubmissions);
   const [rankings, setRankings] = useState<RankedResult[] | null>(null);
@@ -62,12 +76,67 @@ export function AdminBountyActivityClient({
   const [expandedRank, setExpandedRank] = useState<number | null>(null);
   const [isMlOffline, setIsMlOffline] = useState<boolean | null>(null);
 
+  // Accept & Merge state
+  const [currentStatus, setCurrentStatus] = useState(bountyStatus);
+  const [acceptLoading, setAcceptLoading] = useState<string | null>(null); // submission_id being accepted
+  const [acceptError, setAcceptError] = useState<string | null>(null);
+  const [winner, setWinner] = useState<WinnerInfo | null>(null);
+  const [confirmAcceptId, setConfirmAcceptId] = useState<string | null>(null);
+  const [mergeCheckLoading, setMergeCheckLoading] = useState(false);
+  const [mergeStatus, setMergeStatus] = useState<{ merged: boolean; state: string; merged_at: string | null } | null>(null);
+  const [mergeError, setMergeError] = useState<string | null>(null);
+
   // Check health on mount
   useEffect(() => {
     fetch("/api/bounties/health").then(res => res.json()).then(data => {
       setIsMlOffline(!data.ml_online);
     }).catch(() => setIsMlOffline(true));
   }, []);
+
+  // Load existing winner info if bounty is already ACCEPTED or beyond
+  useEffect(() => {
+    if (["ACCEPTED", "AWAITING_SETTLEMENT", "SETTLED", "COMPLETED"].includes(currentStatus)) {
+      // Find the accepted submission
+      const acceptedSub = submissions.find(s => s.status === "accepted" || s.status === "merged");
+      if (acceptedSub) {
+        setWinner({
+          contributor_id: acceptedSub.contributor_id,
+          contributor_name: acceptedSub.contributor_name,
+          contributor_email: acceptedSub.contributor_email,
+          contributor_wallet: null,
+          submission_id: acceptedSub.id,
+          pr_url: acceptedSub.pr_url,
+          score: acceptedSub.ai_quality_score || 0,
+          rank: acceptedSub.rank || 1,
+        });
+      }
+    }
+  }, [currentStatus, submissions]);
+
+  // Auto-poll merge status when bounty is ACCEPTED (every 30 seconds)
+  useEffect(() => {
+    if (currentStatus !== "ACCEPTED") return;
+    
+    const checkMerge = async () => {
+      try {
+        const res = await fetch(`/api/bounties/${bountyId}/check-merge`);
+        if (res.ok) {
+          const data = await res.json();
+          setMergeStatus(data);
+          if (data.merged) {
+            setCurrentStatus("AWAITING_SETTLEMENT");
+          }
+        }
+      } catch { /* ignore polling errors */ }
+    };
+
+    // Check immediately once
+    checkMerge();
+    
+    // Then poll every 30 seconds
+    const interval = setInterval(checkMerge, 30000);
+    return () => clearInterval(interval);
+  }, [currentStatus, bountyId]);
 
   // Check if ML has already run (submissions have scores)
   const hasExistingScores = submissions.some(s => s.ai_quality_score != null && s.rank != null);
@@ -79,6 +148,7 @@ export function AdminBountyActivityClient({
         .sort((a, b) => (a.rank ?? 999) - (b.rank ?? 999))
         .map(s => ({
           submission_id: s.id,
+          contributor_id: s.contributor_id,
           contributor_name: s.contributor_name,
           contributor_email: s.contributor_email,
           contributor_image: s.contributor_image,
@@ -116,9 +186,202 @@ export function AdminBountyActivityClient({
     }
   };
 
+  // Accept a submission as the winner
+  const handleAccept = useCallback(async (submissionId: string) => {
+    setAcceptLoading(submissionId);
+    setAcceptError(null);
+    setConfirmAcceptId(null);
+
+    try {
+      const res = await fetch(`/api/bounties/${bountyId}/accept`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ submissionId }),
+      });
+
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Failed to accept submission");
+
+      setWinner(data.winner);
+      setCurrentStatus("ACCEPTED");
+    } catch (err: any) {
+      setAcceptError(err.message || "Failed to accept submission");
+    } finally {
+      setAcceptLoading(null);
+    }
+  }, [bountyId]);
+
+  // Manually check merge status
+  const handleCheckMerge = async () => {
+    setMergeCheckLoading(true);
+    setMergeError(null);
+
+    try {
+      const res = await fetch(`/api/bounties/${bountyId}/check-merge`);
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Failed to check merge status");
+
+      setMergeStatus(data);
+      if (data.merged) {
+        setCurrentStatus("AWAITING_SETTLEMENT");
+      }
+    } catch (err: any) {
+      setMergeError(err.message || "Failed to check merge status");
+    } finally {
+      setMergeCheckLoading(false);
+    }
+  };
+
+  // Can the admin accept a winner? Only when bounty is SUBMITTED (ML has run)
+  const canAcceptWinner = ["SUBMITTED", "UNDER_REVIEW"].includes(currentStatus) && !winner;
+
   return (
     <div>
-      {/* Submissions List */}
+      {/* ───────── Winner Banner ───────── */}
+      {winner && (
+        <section className="mb-8">
+          <div className={`rounded-2xl overflow-hidden border-2 ${
+            currentStatus === "AWAITING_SETTLEMENT" 
+              ? "border-emerald-500/40 bg-gradient-to-r from-emerald-500/10 to-cyan-500/10"
+              : "border-green-500/30 bg-gradient-to-r from-green-500/10 to-emerald-500/10"
+          }`}>
+            {/* Winner header */}
+            <div className="p-6">
+              <div className="flex items-center gap-2 mb-4">
+                <span className="text-2xl">🏆</span>
+                <h2 className="text-lg font-bold text-white">
+                  {currentStatus === "AWAITING_SETTLEMENT" ? "Winner Confirmed — PR Merged" : "Winner Selected"}
+                </h2>
+                <span className={`text-xs px-2.5 py-1 rounded-full font-bold ml-auto ${
+                  currentStatus === "AWAITING_SETTLEMENT"
+                    ? "bg-emerald-500/20 text-emerald-400 border border-emerald-500/30"
+                    : "bg-green-500/20 text-green-400 border border-green-500/30"
+                }`}>
+                  {currentStatus === "AWAITING_SETTLEMENT" ? "✅ Merged" : "⏳ Awaiting Merge"}
+                </span>
+              </div>
+
+              <div className="flex items-center gap-4">
+                <div className="w-14 h-14 rounded-full bg-gradient-to-br from-yellow-400 to-amber-600 flex items-center justify-center text-2xl font-bold shadow-lg shadow-yellow-900/30">
+                  🥇
+                </div>
+                <div className="flex-1 min-w-0">
+                  <p className="text-white text-lg font-bold">{winner.contributor_name}</p>
+                  <p className="text-gray-400 text-sm">{winner.contributor_email}</p>
+                  {winner.contributor_wallet && (
+                    <p className="text-gray-500 text-xs font-mono mt-0.5 truncate">Wallet: {winner.contributor_wallet}</p>
+                  )}
+                </div>
+                <div className="text-right shrink-0">
+                  <p className="text-3xl font-black text-white">{winner.score}%</p>
+                  <p className="text-gray-500 text-xs">ML Score</p>
+                </div>
+              </div>
+
+              <a
+                href={winner.pr_url}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="mt-3 text-blue-400 text-sm hover:underline flex items-center gap-1"
+              >
+                🔗 {winner.pr_url}
+              </a>
+            </div>
+
+            {/* Action area based on status */}
+            <div className="border-t border-white/10 px-6 py-4 bg-white/[0.02]">
+              {currentStatus === "ACCEPTED" && (
+                <div className="space-y-3">
+                  <div className="flex items-center gap-3 text-sm">
+                    <span className="text-yellow-400">⚠️</span>
+                    <p className="text-gray-300">
+                      <strong>Next step:</strong> Go to GitHub and merge this PR into your repository. Resolve any merge conflicts.
+                    </p>
+                  </div>
+                  <div className="flex items-center gap-3 flex-wrap">
+                    <a
+                      href={winner.pr_url}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="px-5 py-2.5 bg-gradient-to-r from-gray-700 to-gray-600 hover:from-gray-600 hover:to-gray-500 text-white font-medium rounded-xl transition-all text-sm flex items-center gap-2"
+                    >
+                      <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 24 24"><path d="M12 0c-6.626 0-12 5.373-12 12 0 5.302 3.438 9.8 8.207 11.387.599.111.793-.261.793-.577v-2.234c-3.338.726-4.033-1.416-4.033-1.416-.546-1.387-1.333-1.756-1.333-1.756-1.089-.745.083-.729.083-.729 1.205.084 1.839 1.237 1.839 1.237 1.07 1.834 2.807 1.304 3.492.997.107-.775.418-1.305.762-1.604-2.665-.305-5.467-1.334-5.467-5.931 0-1.311.469-2.381 1.236-3.221-.124-.303-.535-1.524.117-3.176 0 0 1.008-.322 3.301 1.23.957-.266 1.983-.399 3.003-.404 1.02.005 2.047.138 3.006.404 2.291-1.552 3.297-1.23 3.297-1.23.653 1.653.242 2.874.118 3.176.77.84 1.235 1.911 1.235 3.221 0 4.609-2.807 5.624-5.479 5.921.43.372.823 1.102.823 2.222v3.293c0 .319.192.694.801.576 4.765-1.589 8.199-6.086 8.199-11.386 0-6.627-5.373-12-12-12z"/></svg>
+                      Open PR on GitHub →
+                    </a>
+                    <button
+                      onClick={handleCheckMerge}
+                      disabled={mergeCheckLoading}
+                      className="px-5 py-2.5 bg-gradient-to-r from-blue-600 to-cyan-600 hover:from-blue-500 hover:to-cyan-500 disabled:opacity-50 text-white font-medium rounded-xl transition-all text-sm flex items-center gap-2"
+                    >
+                      {mergeCheckLoading ? (
+                        <>
+                          <span className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                          Checking...
+                        </>
+                      ) : (
+                        <>🔄 Check Merge Status</>
+                      )}
+                    </button>
+                  </div>
+
+                  {mergeStatus && !mergeStatus.merged && (
+                    <div className="p-3 bg-amber-500/10 border border-amber-500/20 rounded-lg text-amber-400 text-sm flex items-center gap-2">
+                      <span>⏳</span>
+                      <span>PR is <strong>{mergeStatus.state}</strong> — not yet merged. Merge it on GitHub and check again.</span>
+                    </div>
+                  )}
+
+                  {mergeError && (
+                    <div className="p-3 bg-red-500/10 border border-red-500/20 rounded-lg text-red-400 text-sm">
+                      ❌ {mergeError}
+                    </div>
+                  )}
+
+                  <p className="text-gray-600 text-xs flex items-center gap-1">
+                    <span className="w-2 h-2 bg-blue-400 rounded-full animate-pulse" />
+                    Auto-checking merge status every 30 seconds...
+                  </p>
+                </div>
+              )}
+
+              {currentStatus === "AWAITING_SETTLEMENT" && (
+                <div className="space-y-3">
+                  <div className="flex items-center gap-3 text-sm">
+                    <span className="text-emerald-400">✅</span>
+                    <p className="text-emerald-300">
+                      PR has been merged successfully!
+                      {mergeStatus?.merged_at && (
+                        <span className="text-gray-500 ml-2 text-xs">
+                          Merged at {new Date(mergeStatus.merged_at).toLocaleString()}
+                        </span>
+                      )}
+                    </p>
+                  </div>
+                  <button
+                    disabled
+                    className="px-5 py-2.5 bg-gradient-to-r from-emerald-600/50 to-cyan-600/50 text-white/60 font-medium rounded-xl text-sm cursor-not-allowed flex items-center gap-2"
+                  >
+                    💰 Send Payment — Contract Integration Coming Soon
+                  </button>
+                  <p className="text-gray-600 text-xs">
+                    The smart contract settlement will automatically transfer {winner.score ? "the bounty reward" : "funds"} to the winner&apos;s wallet.
+                  </p>
+                </div>
+              )}
+            </div>
+          </div>
+        </section>
+      )}
+
+      {/* ───────── Accept Error ───────── */}
+      {acceptError && (
+        <div className="mb-6 p-4 bg-red-500/10 border border-red-500/20 rounded-xl text-red-400 text-sm">
+          ❌ {acceptError}
+          <button onClick={() => setAcceptError(null)} className="ml-3 text-red-500 hover:text-red-300 underline text-xs">Dismiss</button>
+        </div>
+      )}
+
+      {/* ───────── Submissions List ───────── */}
       <section className="mb-8">
         <h2 className="text-lg font-bold mb-4 flex items-center gap-2">
           <span className="w-6 h-6 bg-blue-500/20 rounded-md flex items-center justify-center text-blue-400 text-xs">📄</span>
@@ -131,53 +394,63 @@ export function AdminBountyActivityClient({
           </div>
         ) : (
           <div className="space-y-3">
-            {submissions.map((s) => (
-              <div key={s.id} className="bg-gray-900/40 border border-gray-800 rounded-xl p-5">
-                <div className="flex items-start gap-3">
-                  {s.contributor_image ? (
-                    <img src={s.contributor_image} alt="" className="w-9 h-9 rounded-full border border-gray-700 shrink-0" />
-                  ) : (
-                    <div className="w-9 h-9 rounded-full bg-gradient-to-br from-cyan-500 to-blue-600 flex items-center justify-center text-xs font-bold shrink-0">
-                      {(s.contributor_name || "?")[0].toUpperCase()}
-                    </div>
-                  )}
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-2 flex-wrap">
-                      <span className="font-medium text-sm">{s.contributor_name}</span>
-                      <span className="text-gray-600 text-xs">{s.contributor_email}</span>
-                      {s.rank != null && s.rank <= 3 && (
-                        <span className="text-xs">{RANK_CONFIG[s.rank]?.badge}</span>
+            {submissions.map((s) => {
+              const isWinner = winner?.submission_id === s.id;
+              return (
+                <div key={s.id} className={`bg-gray-900/40 border rounded-xl p-5 ${
+                  isWinner ? "border-green-500/30 bg-green-500/5" : "border-gray-800"
+                }`}>
+                  <div className="flex items-start gap-3">
+                    {s.contributor_image ? (
+                      <img src={s.contributor_image} alt="" className="w-9 h-9 rounded-full border border-gray-700 shrink-0" />
+                    ) : (
+                      <div className="w-9 h-9 rounded-full bg-gradient-to-br from-cyan-500 to-blue-600 flex items-center justify-center text-xs font-bold shrink-0">
+                        {(s.contributor_name || "?")[0].toUpperCase()}
+                      </div>
+                    )}
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <span className="font-medium text-sm">{s.contributor_name}</span>
+                        <span className="text-gray-600 text-xs">{s.contributor_email}</span>
+                        {isWinner && (
+                          <span className="text-xs bg-green-500/20 text-green-400 px-2 py-0.5 rounded-full border border-green-500/30 font-bold">
+                            🏆 Winner
+                          </span>
+                        )}
+                        {s.rank != null && s.rank <= 3 && (
+                          <span className="text-xs">{RANK_CONFIG[s.rank]?.badge}</span>
+                        )}
+                      </div>
+                      <a href={s.pr_url} target="_blank" rel="noopener noreferrer"
+                        className="text-blue-400 text-xs hover:underline truncate block mt-1">
+                        🔗 {s.pr_url}
+                      </a>
+                      {s.documentation && (
+                        <p className="text-gray-500 text-xs mt-1.5 line-clamp-2">📝 {s.documentation}</p>
+                      )}
+                      {s.comments && (
+                        <p className="text-gray-600 text-xs mt-1 italic">💬 {s.comments}</p>
                       )}
                     </div>
-                    <a href={s.pr_url} target="_blank" rel="noopener noreferrer"
-                      className="text-blue-400 text-xs hover:underline truncate block mt-1">
-                      🔗 {s.pr_url}
-                    </a>
-                    {s.documentation && (
-                      <p className="text-gray-500 text-xs mt-1.5 line-clamp-2">📝 {s.documentation}</p>
-                    )}
-                    {s.comments && (
-                      <p className="text-gray-600 text-xs mt-1 italic">💬 {s.comments}</p>
-                    )}
-                  </div>
-                  <div className="shrink-0 text-right">
-                    {s.ai_quality_score != null ? (
-                      <div className="text-sm">
-                        <span className="font-bold text-white">{s.ai_quality_score}%</span>
-                        {s.rank && <span className="text-gray-500 text-xs ml-1">#{s.rank}</span>}
-                      </div>
-                    ) : (
-                      <span className="text-xs text-gray-600 bg-gray-800 px-2 py-1 rounded">Pending</span>
-                    )}
+                    <div className="shrink-0 text-right">
+                      {s.ai_quality_score != null ? (
+                        <div className="text-sm">
+                          <span className="font-bold text-white">{s.ai_quality_score}%</span>
+                          {s.rank && <span className="text-gray-500 text-xs ml-1">#{s.rank}</span>}
+                        </div>
+                      ) : (
+                        <span className="text-xs text-gray-600 bg-gray-800 px-2 py-1 rounded">Pending</span>
+                      )}
+                    </div>
                   </div>
                 </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
         )}
       </section>
 
-      {/* ML Pipeline Launcher */}
+      {/* ───────── ML Pipeline Launcher ───────── */}
       {submissions.length > 0 && (
         <section className="mb-8">
           <div className="bg-gradient-to-r from-purple-500/10 to-blue-500/10 border border-purple-500/20 rounded-2xl p-6">
@@ -193,7 +466,7 @@ export function AdminBountyActivityClient({
               </div>
               <button
                 onClick={launchMLPipeline}
-                disabled={mlLoading}
+                disabled={mlLoading || !!winner}
                 className="px-6 py-3 bg-gradient-to-r from-purple-600 to-blue-600 hover:from-purple-500 hover:to-blue-500 text-white font-bold rounded-xl transition-all disabled:opacity-50 disabled:cursor-not-allowed shadow-lg shadow-purple-900/20 whitespace-nowrap"
               >
                 {mlLoading ? (
@@ -201,6 +474,8 @@ export function AdminBountyActivityClient({
                     <span className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
                     Analyzing {submissions.length} PRs...
                   </span>
+                ) : winner ? (
+                  "Winner Already Selected"
                 ) : hasExistingScores ? (
                   "🔄 Re-Run ML Pipeline"
                 ) : (
@@ -236,12 +511,17 @@ export function AdminBountyActivityClient({
         </section>
       )}
 
-      {/* Rankings Display — Top 3 */}
+      {/* ───────── Rankings Display — Top 3 ───────── */}
       {displayRankings && displayRankings.length > 0 && (
         <section className="mb-8">
           <h2 className="text-lg font-bold mb-5 flex items-center gap-2">
             <span className="w-6 h-6 bg-yellow-500/20 rounded-md flex items-center justify-center text-yellow-400 text-xs">🏆</span>
             ML Rankings — Top Contributors
+            {canAcceptWinner && (
+              <span className="ml-auto text-xs bg-emerald-500/10 text-emerald-400 px-3 py-1 rounded-full border border-emerald-500/20 font-medium animate-pulse">
+                Select a winner below ↓
+              </span>
+            )}
           </h2>
 
           <div className="space-y-4">
@@ -249,19 +529,23 @@ export function AdminBountyActivityClient({
               const config = RANK_CONFIG[r.rank] || RANK_CONFIG[3];
               const isExpanded = expandedRank === r.rank;
               const report = r.report;
+              const isThisWinner = winner?.submission_id === r.submission_id;
+              const isBeingAccepted = acceptLoading === r.submission_id;
 
               return (
-                <div key={r.submission_id} className={`border ${config.border} ${config.bg} rounded-2xl overflow-hidden transition-all`}>
+                <div key={r.submission_id} className={`border ${isThisWinner ? "border-green-500/40 bg-green-500/5" : config.border + " " + config.bg} rounded-2xl overflow-hidden transition-all`}>
                   {/* Rank Header */}
                   <div
                     className="p-6 cursor-pointer hover:bg-white/[0.02] transition-colors"
                     onClick={() => setExpandedRank(isExpanded ? null : r.rank)}
                   >
                     <div className="flex items-center gap-4">
-                      <div className="text-4xl">{config.badge}</div>
+                      <div className="text-4xl">{isThisWinner ? "🏆" : config.badge}</div>
                       <div className="flex-1 min-w-0">
                         <div className="flex items-center gap-3 flex-wrap">
-                          <span className={`text-sm font-bold ${config.text}`}>{config.label}</span>
+                          <span className={`text-sm font-bold ${isThisWinner ? "text-green-400" : config.text}`}>
+                            {isThisWinner ? "Winner" : config.label}
+                          </span>
                           <span className="font-bold text-white text-lg">{r.contributor_name}</span>
                           <span className={`text-xs px-2 py-0.5 rounded-full font-bold border ${
                             r.verdict === "PASS" ? "bg-emerald-500/20 text-emerald-400 border-emerald-500/30" :
@@ -270,6 +554,11 @@ export function AdminBountyActivityClient({
                           }`}>
                             {r.verdict}
                           </span>
+                          {isThisWinner && (
+                            <span className="text-xs bg-green-500/20 text-green-400 px-2 py-0.5 rounded-full border border-green-500/30 font-bold">
+                              ✅ Accepted
+                            </span>
+                          )}
                         </div>
                         <a href={r.pr_url} target="_blank" rel="noopener noreferrer"
                           className="text-blue-400 text-xs hover:underline mt-1 block truncate">
@@ -280,6 +569,41 @@ export function AdminBountyActivityClient({
                         <div className="text-3xl font-black text-white">{r.overall_score}%</div>
                         <p className="text-gray-500 text-xs">Overall Score</p>
                       </div>
+
+                      {/* Accept Button */}
+                      {canAcceptWinner && (
+                        <div className="shrink-0 ml-2" onClick={(e) => e.stopPropagation()}>
+                          {confirmAcceptId === r.submission_id ? (
+                            <div className="flex flex-col gap-1.5">
+                              <button
+                                onClick={() => handleAccept(r.submission_id)}
+                                disabled={isBeingAccepted}
+                                className="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-white text-xs font-bold rounded-lg transition-all flex items-center gap-1.5"
+                              >
+                                {isBeingAccepted ? (
+                                  <><span className="w-3 h-3 border-2 border-white/30 border-t-white rounded-full animate-spin" /> Accepting...</>
+                                ) : (
+                                  <>✅ Confirm</>
+                                )}
+                              </button>
+                              <button
+                                onClick={() => setConfirmAcceptId(null)}
+                                className="px-4 py-1.5 text-gray-500 hover:text-gray-300 text-xs rounded-lg transition-all"
+                              >
+                                Cancel
+                              </button>
+                            </div>
+                          ) : (
+                            <button
+                              onClick={() => setConfirmAcceptId(r.submission_id)}
+                              className="px-4 py-2.5 bg-gradient-to-r from-emerald-600 to-green-600 hover:from-emerald-500 hover:to-green-500 text-white text-xs font-bold rounded-xl transition-all shadow-lg shadow-emerald-900/20 whitespace-nowrap"
+                            >
+                              ✅ Accept &amp; Select
+                            </button>
+                          )}
+                        </div>
+                      )}
+
                       <div className="text-gray-500 text-lg shrink-0">
                         {isExpanded ? "▲" : "▼"}
                       </div>
@@ -396,6 +720,42 @@ export function AdminBountyActivityClient({
             )}
           </div>
         </section>
+      )}
+
+      {/* ───────── Confirmation Modal ───────── */}
+      {confirmAcceptId && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4" onClick={() => setConfirmAcceptId(null)}>
+          <div className="bg-[#1a1a1b] border border-gray-700 rounded-2xl p-8 max-w-md w-full shadow-2xl" onClick={e => e.stopPropagation()}>
+            <div className="text-center mb-6">
+              <div className="text-4xl mb-3">⚠️</div>
+              <h3 className="text-xl font-bold text-white mb-2">Confirm Winner Selection</h3>
+              <p className="text-gray-400 text-sm">
+                This will mark <strong className="text-white">
+                  {displayRankings?.find(r => r.submission_id === confirmAcceptId)?.contributor_name}
+                </strong> as the winner. All other submissions will be rejected.
+              </p>
+              <p className="text-gray-500 text-xs mt-3">
+                You will then need to go to GitHub and merge their PR.
+                Once merged, the bounty payment can be processed.
+              </p>
+            </div>
+            <div className="flex gap-3">
+              <button
+                onClick={() => setConfirmAcceptId(null)}
+                className="flex-1 px-4 py-3 bg-gray-700 hover:bg-gray-600 text-white font-medium rounded-xl transition-all"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={() => handleAccept(confirmAcceptId)}
+                disabled={!!acceptLoading}
+                className="flex-1 px-4 py-3 bg-gradient-to-r from-emerald-600 to-green-600 hover:from-emerald-500 hover:to-green-500 disabled:opacity-50 text-white font-bold rounded-xl transition-all"
+              >
+                {acceptLoading ? "Accepting..." : "✅ Accept Winner"}
+              </button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );

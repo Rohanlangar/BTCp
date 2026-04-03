@@ -183,6 +183,7 @@ export default async function AdminBountyActivityPage({ params }: { params: Prom
         <AdminBountyActivityClient
           bountyId={bountyId}
           initialSubmissions={submissions}
+          bountyStatus={bounty.status}
         />
 
         {/* Activity Log */}

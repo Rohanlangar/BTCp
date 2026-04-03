@@ -11,18 +11,20 @@ const pool = new Pool({
 });
 
 const STATUS_CONFIG: Record<string, { bg: string; text: string; label: string }> = {
-  DRAFT:        { bg: "bg-gray-500/20",    text: "text-gray-400",    label: "Draft" },
-  OPEN:         { bg: "bg-green-500/20",   text: "text-green-400",   label: "Open" },
-  CLAIMED:      { bg: "bg-blue-500/20",    text: "text-blue-400",    label: "Claimed" },
-  IN_PROGRESS:  { bg: "bg-cyan-500/20",    text: "text-cyan-400",    label: "In Progress" },
-  SUBMITTED:    { bg: "bg-yellow-500/20",  text: "text-yellow-400",  label: "Under Review" },
-  UNDER_REVIEW: { bg: "bg-yellow-500/20",  text: "text-yellow-400",  label: "Under Review" },
-  DISPUTED:     { bg: "bg-orange-500/20",  text: "text-orange-400",  label: "Disputed" },
-  SETTLED:      { bg: "bg-emerald-500/20", text: "text-emerald-400", label: "Completed" },
-  COMPLETED:    { bg: "bg-emerald-500/20", text: "text-emerald-400", label: "Completed" },
-  CANCELLED:    { bg: "bg-red-500/20",     text: "text-red-400",     label: "Cancelled" },
-  EXPIRED:      { bg: "bg-rose-500/20",    text: "text-rose-400",    label: "Expired" },
-  REFUNDED:     { bg: "bg-purple-500/20",  text: "text-purple-400",  label: "Refunded" },
+  DRAFT:                { bg: "bg-gray-500/20",    text: "text-gray-400",    label: "Draft" },
+  OPEN:                 { bg: "bg-green-500/20",   text: "text-green-400",   label: "Open" },
+  CLAIMED:              { bg: "bg-blue-500/20",    text: "text-blue-400",    label: "Claimed" },
+  IN_PROGRESS:          { bg: "bg-cyan-500/20",    text: "text-cyan-400",    label: "In Progress" },
+  SUBMITTED:            { bg: "bg-yellow-500/20",  text: "text-yellow-400",  label: "Under Review" },
+  UNDER_REVIEW:         { bg: "bg-yellow-500/20",  text: "text-yellow-400",  label: "Under Review" },
+  ACCEPTED:             { bg: "bg-teal-500/20",    text: "text-teal-400",    label: "Winner Accepted" },
+  AWAITING_SETTLEMENT:  { bg: "bg-indigo-500/20",  text: "text-indigo-400",  label: "Awaiting Settlement" },
+  DISPUTED:             { bg: "bg-orange-500/20",  text: "text-orange-400",  label: "Disputed" },
+  SETTLED:              { bg: "bg-emerald-500/20", text: "text-emerald-400", label: "Completed" },
+  COMPLETED:            { bg: "bg-emerald-500/20", text: "text-emerald-400", label: "Completed" },
+  CANCELLED:            { bg: "bg-red-500/20",     text: "text-red-400",     label: "Cancelled" },
+  EXPIRED:              { bg: "bg-rose-500/20",    text: "text-rose-400",    label: "Expired" },
+  REFUNDED:             { bg: "bg-purple-500/20",  text: "text-purple-400",  label: "Refunded" },
 };
 
 export default async function AdminDashboardPage() {
@@ -199,18 +201,22 @@ export default async function AdminDashboardPage() {
                           </a>
                         )}
                         {(b.status === "SUBMITTED" || b.status === "UNDER_REVIEW") && (
-                          <>
-                            <Link href={`/dashboard/admin/bounty/${b.id}`}
-                              className="text-xs bg-yellow-500 hover:bg-yellow-400 text-black px-3 py-2 rounded-lg font-bold transition-colors">
-                              Review Submissions
-                            </Link>
-                            <button className="text-xs bg-emerald-600 hover:bg-emerald-500 text-white px-3 py-2 rounded-lg font-medium transition-colors">
-                              Approve
-                            </button>
-                            <button className="text-xs bg-red-600/20 text-red-400 hover:bg-red-600/30 px-3 py-2 rounded-lg font-medium transition-colors border border-red-500/20">
-                              Reject
-                            </button>
-                          </>
+                          <Link href={`/dashboard/admin/bounty/${b.id}`}
+                            className="text-xs bg-yellow-500 hover:bg-yellow-400 text-black px-3 py-2 rounded-lg font-bold transition-colors">
+                            Review &amp; Accept Winner
+                          </Link>
+                        )}
+                        {b.status === "ACCEPTED" && (
+                          <Link href={`/dashboard/admin/bounty/${b.id}`}
+                            className="text-xs bg-teal-500 hover:bg-teal-400 text-black px-3 py-2 rounded-lg font-bold transition-colors flex items-center gap-1">
+                            ⏳ Merge PR &amp; Check Status
+                          </Link>
+                        )}
+                        {b.status === "AWAITING_SETTLEMENT" && (
+                          <Link href={`/dashboard/admin/bounty/${b.id}`}
+                            className="text-xs bg-indigo-500/20 text-indigo-400 px-3 py-2 rounded-lg font-medium transition-colors border border-indigo-500/20 flex items-center gap-1">
+                            💰 Settle Bounty
+                          </Link>
                         )}
                         {(b.status === "SETTLED" || b.status === "COMPLETED") && (
                           b.settledTxnId ? (

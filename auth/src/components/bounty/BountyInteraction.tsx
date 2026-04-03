@@ -162,6 +162,32 @@ export function BountyInteraction({ bounty }: { bounty: any }) {
             </div>
           )}
 
+          {/* ACCEPTED — Winner selected, awaiting PR merge */}
+          {bounty.status === "ACCEPTED" && (
+            <div className="text-center">
+              <div className="inline-flex items-center justify-center w-16 h-16 rounded-full bg-teal-500/20 text-teal-400 mb-4">
+                <span className="text-3xl">🏆</span>
+              </div>
+              <h3 className="text-xl font-bold text-teal-400 mb-2">Winner Selected</h3>
+              <p className="text-slate-400 mb-2 text-sm max-w-sm mx-auto">
+                The admin has selected a winning submission. The PR is being merged on GitHub. Once merged, the bounty reward will be sent.
+              </p>
+            </div>
+          )}
+
+          {/* AWAITING_SETTLEMENT — PR merged, payment pending */}
+          {bounty.status === "AWAITING_SETTLEMENT" && (
+            <div className="text-center">
+              <div className="inline-flex items-center justify-center w-16 h-16 rounded-full bg-indigo-500/20 text-indigo-400 mb-4">
+                <span className="text-3xl">💰</span>
+              </div>
+              <h3 className="text-xl font-bold text-indigo-400 mb-2">Awaiting Settlement</h3>
+              <p className="text-slate-400 mb-2 text-sm max-w-sm mx-auto">
+                The winning PR has been merged. The bounty reward is being processed and will be sent to the winner&apos;s wallet shortly.
+              </p>
+            </div>
+          )}
+
           {/* SETTLED */}
           {bounty.status === "SETTLED" && (
             <div className="text-center p-4 bg-emerald-500/5 rounded-xl border border-emerald-500/10">
