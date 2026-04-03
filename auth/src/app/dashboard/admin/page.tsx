@@ -2,6 +2,7 @@ import { auth } from "@/lib/auth";
 import { headers } from "next/headers";
 import { redirect } from "next/navigation";
 import { Pool } from "pg";
+import { PostBountyForm } from "@/components/bounty/PostBountyForm";
 
 const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
@@ -115,6 +116,11 @@ export default async function AdminDashboardPage() {
             <p className="text-3xl font-bold text-emerald-400">{stats.totalPaid.toFixed(2)} ALGO</p>
           </div>
         </div>
+
+        {/* Post New Bounty */}
+        <section className="mb-12">
+          <PostBountyForm />
+        </section>
 
         {/* Bounties List */}
         <section>

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useWallet } from "@txnlab/use-wallet-react";
 import { useBountyContracts, DeployStep } from "@/hooks/useBountyContracts";
 
@@ -18,6 +18,9 @@ export function PostBountyForm() {
     bountyId: number;
   } | null>(null);
   const [error, setError] = useState<string | null>(null);
+
+  const [mounted, setMounted] = useState(false);
+  useEffect(() => setMounted(true), []);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -51,6 +54,14 @@ export function PostBountyForm() {
       setIsDeploying(false);
     }
   };
+
+  if (!mounted) {
+    return (
+      <div className="bg-white/95 backdrop-blur rounded-2xl shadow-lg p-6 border border-white/50 text-center flex items-center justify-center min-h-[200px]">
+        <div className="w-6 h-6 border-2 border-blue-600/30 border-t-blue-600 rounded-full animate-spin"></div>
+      </div>
+    );
+  }
 
   if (!isConnected) {
     return (
