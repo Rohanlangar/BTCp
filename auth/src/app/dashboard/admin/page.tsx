@@ -1,65 +1,229 @@
+import { auth } from "@/lib/auth";
 import { headers } from "next/headers";
+import { redirect } from "next/navigation";
+import { Pool } from "pg";
+
+const pool = new Pool({
+  connectionString: process.env.DATABASE_URL,
+  ssl: process.env.NODE_ENV === "production" ? { rejectUnauthorized: false } : false,
+});
+
+// Maps both old enum (OPEN/CLAIMED/SUBMITTED/SETTLED/CANCELLED) 
+// and new states to display config
+const STATUS_CONFIG: Record<string, { bg: string; text: string; label: string }> = {
+  DRAFT:        { bg: "bg-gray-500/20",    text: "text-gray-400",    label: "Draft" },
+  OPEN:         { bg: "bg-green-500/20",   text: "text-green-400",   label: "Open" },
+  CLAIMED:      { bg: "bg-blue-500/20",    text: "text-blue-400",    label: "Claimed" },
+  IN_PROGRESS:  { bg: "bg-cyan-500/20",    text: "text-cyan-400",    label: "In Progress" },
+  SUBMITTED:    { bg: "bg-yellow-500/20",  text: "text-yellow-400",  label: "Under Review" },
+  UNDER_REVIEW: { bg: "bg-yellow-500/20",  text: "text-yellow-400",  label: "Under Review" },
+  DISPUTED:     { bg: "bg-orange-500/20",  text: "text-orange-400",  label: "Disputed" },
+  SETTLED:      { bg: "bg-emerald-500/20", text: "text-emerald-400", label: "Completed" },
+  COMPLETED:    { bg: "bg-emerald-500/20", text: "text-emerald-400", label: "Completed" },
+  CANCELLED:    { bg: "bg-red-500/20",     text: "text-red-400",     label: "Cancelled" },
+  EXPIRED:      { bg: "bg-rose-500/20",    text: "text-rose-400",    label: "Expired" },
+  REFUNDED:     { bg: "bg-purple-500/20",  text: "text-purple-400",  label: "Refunded" },
+};
 
 export default async function AdminDashboardPage() {
-  return (
-    <div className="min-h-screen bg-black text-white p-8">
-      <div className="max-w-6xl mx-auto">
-        <header className="flex justify-between items-center mb-12 border-b border-gray-800 pb-6">
-          <h1 className="text-3xl font-bold">Admin Dashboard</h1>
-          <div className="flex gap-4 items-center">
-            <span className="text-gray-400">🏢 Admin Mode</span>
-            <div className="h-10 w-10 bg-gradient-to-tr from-purple-500 to-pink-500 rounded-full"></div>
-          </div>
-        </header>
+  const headersList = await headers();
+  const session = await auth.api.getSession({
+    headers: { cookie: headersList.get("cookie") || "" },
+  });
 
-        <div className="grid md:grid-cols-3 gap-6 mb-8">
-          <div className="bg-gray-900/50 p-6 rounded-2xl border border-gray-800">
-            <h3 className="text-gray-400 font-medium mb-2">Active Bounties</h3>
-            <p className="text-4xl font-bold text-white">4</p>
+  if (!session) redirect("/login");
+  if ((session.user as any).role !== "admin") redirect("/dashboard/contributor");
+
+  // Fetch bounties using ACTUAL column names from the existing table
+  const bountiesResult = await pool.query(
+    `SELECT * FROM bounties WHERE "creatorId" = $1 ORDER BY "createdAt" DESC`,
+    [session.user.id]
+  );
+  const bounties = bountiesResult.rows;
+
+  // Safely try to get claim counts (table may not exist yet)
+  let claimCounts: Record<string, number> = {};
+  try {
+    const claimsResult = await pool.query(
+      `SELECT "bounty_id", COUNT(*) as cnt FROM claims WHERE status = 'active' GROUP BY "bounty_id"`
+    );
+    claimsResult.rows.forEach((r: any) => { claimCounts[r.bounty_id] = parseInt(r.cnt); });
+  } catch (_) { /* claims table may not exist yet */ }
+
+  // Analytics
+  const isActive = (s: string) => ["OPEN", "CLAIMED", "IN_PROGRESS"].includes(s);
+  const isComplete = (s: string) => ["SETTLED", "COMPLETED"].includes(s);
+  const stats = {
+    total: bounties.length,
+    active: bounties.filter((b: any) => isActive(b.status)).length,
+    underReview: bounties.filter((b: any) => ["SUBMITTED", "UNDER_REVIEW"].includes(b.status)).length,
+    completed: bounties.filter((b: any) => isComplete(b.status)).length,
+    totalLocked: bounties
+      .filter((b: any) => !isComplete(b.status) && b.status !== "CANCELLED")
+      .reduce((s: number, b: any) => s + parseFloat(b.rewardAlgo || 0), 0),
+    totalPaid: bounties
+      .filter((b: any) => isComplete(b.status))
+      .reduce((s: number, b: any) => s + parseFloat(b.rewardAlgo || 0), 0),
+  };
+
+  return (
+    <div className="min-h-screen bg-[#0a0a0a] text-white">
+      {/* Header */}
+      <header className="border-b border-gray-800 px-6 py-4 flex justify-between items-center sticky top-0 bg-[#0a0a0a]/95 backdrop-blur z-10">
+        <div className="flex items-center gap-3">
+          <div className="w-8 h-8 bg-gradient-to-br from-purple-500 to-pink-500 rounded-lg flex items-center justify-center text-sm font-bold">B</div>
+          <span className="font-bold text-lg">BountyChain</span>
+          <span className="text-xs bg-purple-500/20 text-purple-400 px-2 py-0.5 rounded-full font-medium border border-purple-500/30">Admin</span>
+        </div>
+        <div className="flex items-center gap-3">
+          <span className="text-gray-500 text-sm hidden md:block">{session.user.email}</span>
+          {session.user.image && (
+            <img src={session.user.image} alt="" className="w-8 h-8 rounded-full border-2 border-gray-700" />
+          )}
+        </div>
+      </header>
+
+      <main className="max-w-7xl mx-auto px-6 py-8">
+        {/* Title */}
+        <div className="mb-8">
+          <h1 className="text-3xl font-bold">Admin Dashboard</h1>
+          <p className="text-gray-500 mt-1">Manage your bounties and review contributor submissions</p>
+        </div>
+
+        {/* Stats */}
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
+          {[
+            { label: "Total Bounties", value: stats.total, color: "text-white" },
+            { label: "Active / Open", value: stats.active, color: "text-green-400" },
+            { label: "Under Review", value: stats.underReview, color: "text-yellow-400" },
+            { label: "Completed", value: stats.completed, color: "text-emerald-400" },
+          ].map(stat => (
+            <div key={stat.label} className="bg-gray-900/50 border border-gray-800 rounded-2xl p-5">
+              <p className="text-gray-500 text-xs font-medium uppercase tracking-wider mb-2">{stat.label}</p>
+              <p className={`text-3xl font-bold ${stat.color}`}>{stat.value}</p>
+            </div>
+          ))}
+        </div>
+
+        <div className="grid md:grid-cols-2 gap-4 mb-8">
+          <div className="bg-gray-900/50 border border-gray-800 rounded-2xl p-5">
+            <p className="text-gray-500 text-xs font-medium uppercase tracking-wider mb-2">ALGO Locked in Escrow</p>
+            <p className="text-3xl font-bold text-[#ffee55]">{stats.totalLocked.toFixed(2)} ALGO</p>
           </div>
-          <div className="bg-gray-900/50 p-6 rounded-2xl border border-gray-800">
-            <h3 className="text-gray-400 font-medium mb-2">Pending Submissions</h3>
-            <p className="text-4xl font-bold text-white">12</p>
-          </div>
-          <div className="bg-gray-900/50 p-6 rounded-2xl border border-gray-800">
-            <h3 className="text-gray-400 font-medium mb-2">Total Locked (ALGO)</h3>
-            <p className="text-4xl font-bold text-[#ffee55]">1,250</p>
+          <div className="bg-gray-900/50 border border-gray-800 rounded-2xl p-5">
+            <p className="text-gray-500 text-xs font-medium uppercase tracking-wider mb-2">Total ALGO Paid Out</p>
+            <p className="text-3xl font-bold text-emerald-400">{stats.totalPaid.toFixed(2)} ALGO</p>
           </div>
         </div>
 
+        {/* Bounties List */}
         <section>
-          <div className="flex justify-between items-center mb-6">
-            <h2 className="text-xl font-bold">Your Bounties</h2>
-            <button className="bg-white text-black px-4 py-2 rounded-lg font-medium hover:bg-gray-200 transition-colors">
-              + Post New Bounty
-            </button>
-          </div>
-          <div className="bg-gray-900/30 rounded-2xl border border-gray-800 overflow-hidden">
-             {/* Mock table */}
-             <table className="w-full text-left">
-                <thead className="bg-gray-900/80 text-gray-400 text-sm">
-                  <tr>
-                    <th className="p-4 font-medium">Bounty Title</th>
-                    <th className="p-4 font-medium">Reward</th>
-                    <th className="p-4 font-medium">Status</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-gray-800">
-                  <tr>
-                    <td className="p-4">Fix Smart Contract Reentrancy Vulnerability</td>
-                    <td className="p-4 text-[#ffee55]">500 ALGO</td>
-                    <td className="p-4"><span className="bg-green-500/20 text-green-400 px-3 py-1 rounded-full text-xs font-semibold">Active</span></td>
-                  </tr>
-                  <tr>
-                    <td className="p-4">Build Frontend UI for NFT Marketplace</td>
-                    <td className="p-4 text-[#ffee55]">250 ALGO</td>
-                    <td className="p-4"><span className="bg-purple-500/20 text-purple-400 px-3 py-1 rounded-full text-xs font-semibold">Reviewing</span></td>
-                  </tr>
-                </tbody>
-             </table>
-          </div>
+          <h2 className="text-xl font-bold mb-4">Your Bounties</h2>
+
+          {bounties.length === 0 ? (
+            <div className="text-center py-20 border border-dashed border-gray-800 rounded-2xl">
+              <p className="text-5xl mb-4">📭</p>
+              <p className="text-xl font-medium text-gray-300">No bounties posted yet</p>
+              <p className="text-gray-600 mt-2 text-sm">Your team's contract integration will post bounties here.</p>
+            </div>
+          ) : (
+            <div className="space-y-4">
+              {bounties.map((b: any) => {
+                const style = STATUS_CONFIG[b.status] || STATUS_CONFIG["OPEN"];
+                const title = b.issueTitle || b.issueUrl || "Untitled Bounty";
+                const claimCount = claimCounts[b.id] ?? (b.contributorId ? 1 : 0);
+
+                return (
+                  <div key={b.id} className="bg-gray-900/40 border border-gray-800 hover:border-gray-700 rounded-2xl p-6 transition-all">
+                    <div className="flex flex-col md:flex-row md:items-start justify-between gap-4">
+                      {/* Left: Info */}
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-3 mb-2 flex-wrap">
+                          <span className={`text-xs font-semibold px-3 py-1 rounded-full ${style.bg} ${style.text}`}>
+                            ● {style.label}
+                          </span>
+                          <span className="text-[#ffee55] font-bold">{b.rewardAlgo} ALGO</span>
+                        </div>
+                        <h3 className="font-bold text-lg leading-tight mb-1 truncate">{title}</h3>
+                        {b.issueDescription && (
+                          <p className="text-gray-500 text-sm line-clamp-2 mb-2">{b.issueDescription}</p>
+                        )}
+                        <div className="flex items-center gap-4 text-xs text-gray-600 flex-wrap">
+                          {b.repoOwner && <span>📁 {b.repoOwner}/{b.repoName}</span>}
+                          {b.issueNumber && <span>#{b.issueNumber}</span>}
+                          <span>Claims: {claimCount}</span>
+                          {b.escrowAppId && <span>Escrow: {b.escrowAppId}</span>}
+                          <span>Posted {new Date(b.createdAt).toLocaleDateString()}</span>
+                        </div>
+                      </div>
+
+                      {/* Right: Actions */}
+                      <div className="flex gap-2 flex-wrap shrink-0">
+                        {b.status === "OPEN" && (
+                          <>
+                            <a href={b.issueUrl} target="_blank" rel="noopener noreferrer"
+                              className="text-xs bg-gray-700 hover:bg-gray-600 text-white px-3 py-2 rounded-lg font-medium transition-colors">
+                              View Issue ↗
+                            </a>
+                            <button className="text-xs bg-blue-600/20 text-blue-400 hover:bg-blue-600/30 px-3 py-2 rounded-lg font-medium transition-colors border border-blue-500/20">
+                              View Claims ({claimCount})
+                            </button>
+                          </>
+                        )}
+                        {b.status === "CLAIMED" && (
+                          <button className="text-xs bg-blue-600 hover:bg-blue-500 text-white px-3 py-2 rounded-lg font-medium transition-colors">
+                            View Claimant
+                          </button>
+                        )}
+                        {(b.status === "SUBMITTED" || b.status === "UNDER_REVIEW") && (
+                          <>
+                            <button className="text-xs bg-yellow-500 hover:bg-yellow-400 text-black px-3 py-2 rounded-lg font-bold transition-colors">
+                              Review Submission
+                            </button>
+                            <button className="text-xs bg-emerald-600 hover:bg-emerald-500 text-white px-3 py-2 rounded-lg font-medium transition-colors">
+                              Approve
+                            </button>
+                            <button className="text-xs bg-red-600/20 text-red-400 hover:bg-red-600/30 px-3 py-2 rounded-lg font-medium transition-colors border border-red-500/20">
+                              Reject
+                            </button>
+                          </>
+                        )}
+                        {(b.status === "SETTLED" || b.status === "COMPLETED") && (
+                          b.settledTxnId ? (
+                            <a href={`https://testnet.algoexplorer.io/tx/${b.settledTxnId}`} target="_blank" rel="noopener noreferrer"
+                              className="text-xs bg-emerald-600/20 text-emerald-400 px-3 py-2 rounded-lg font-medium border border-emerald-500/20">
+                              View Txn ↗
+                            </a>
+                          ) : (
+                            <span className="text-xs text-gray-600 py-2">✓ Settled</span>
+                          )
+                        )}
+                        {b.status === "CANCELLED" && (
+                          <span className="text-xs text-gray-600 py-2">Cancelled</span>
+                        )}
+                      </div>
+                    </div>
+
+                    {/* Submission info if exists */}
+                    {b.prUrl && (
+                      <div className="mt-4 pt-4 border-t border-gray-800 flex items-center gap-3 flex-wrap">
+                        <span className="text-xs text-gray-500">PR Submitted:</span>
+                        <a href={b.prUrl} target="_blank" rel="noopener noreferrer"
+                          className="text-xs text-blue-400 hover:text-blue-300 underline">{b.prUrl}</a>
+                        {b.mlScores && (
+                          <span className="text-xs bg-emerald-500/10 text-emerald-400 px-2 py-0.5 rounded border border-emerald-500/20">
+                            AI Score: {(b.mlScores as any)?.overall ?? "N/A"}%
+                          </span>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          )}
         </section>
-      </div>
+      </main>
     </div>
   );
 }
