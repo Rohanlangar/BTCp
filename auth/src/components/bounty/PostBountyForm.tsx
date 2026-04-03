@@ -1,14 +1,18 @@
 "use client";
 
 import { useState } from "react";
-import { useBountyContracts } from "@/hooks/useBountyContracts";
+import { useWallet } from "@txnlab/use-wallet-react";
+import { useBountyContracts, DeployStep } from "@/hooks/useBountyContracts";
 
 export function PostBountyForm() {
   const { createBounty, isConnected } = useBountyContracts();
+  const { activeAddress } = useWallet();
   
   const [issueUrl, setIssueUrl] = useState("");
-  const [rewardAmount, setRewardAmount] = useState(1); // 1 ALGO default
+  const [rewardAmount, setRewardAmount] = useState(1);
   const [isDeploying, setIsDeploying] = useState(false);
+  const [deployStep, setDeployStep] = useState<DeployStep>("IDLE");
+  
   const [deploySuccess, setDeploySuccess] = useState<{
     escrowAppId: number;
     bountyId: number;
@@ -30,17 +34,19 @@ export function PostBountyForm() {
     setError(null);
     setIsDeploying(true);
     setDeploySuccess(null);
+    setDeployStep("IDLE");
 
     try {
-      // By default REGISTRY_APP_ID is 0 in algorand.ts until deployed
-      // It will just deploy Escrow + Fund MBR + Deposit Reward.
-      const result = await createBounty(issueUrl, rewardAmount);
+      const result = await createBounty(issueUrl, rewardAmount, (step) => {
+        setDeployStep(step);
+      });
       setDeploySuccess(result);
       setIssueUrl("");
       setRewardAmount(1);
     } catch (err: any) {
       console.error("Failed to post bounty:", err);
       setError(err?.message || "An error occurred while posting the bounty.");
+      setDeployStep("ERROR");
     } finally {
       setIsDeploying(false);
     }
@@ -54,12 +60,35 @@ export function PostBountyForm() {
     );
   }
 
+  // Helper to render deploy step UI
+  const getStepMessage = () => {
+    switch(deployStep) {
+      case "COMPILING": return "Compiling TEAL programs...";
+      case "DEPLOYING": return "Check Pera Wallet: Sign Escrow Deployment...";
+      case "FUNDING": return "Check Pera Wallet: Sign MBR Funding (0.3 ALGO)...";
+      case "REGISTERING": return "Check Pera Wallet: Sign Registry Link...";
+      case "DEPOSITING": return "Check Pera Wallet: Sign Reward Deposit...";
+      case "SUCCESS": return "Syncing with Database...";
+      default: return "Create Escrow & Lock Bounty";
+    }
+  };
+
   return (
-    <div className="bg-white/95 backdrop-blur rounded-2xl shadow-lg p-8 border border-white/50">
+    <div className="bg-white/95 backdrop-blur rounded-2xl shadow-lg p-8 border border-white/50 relative overflow-hidden">
+      {/* Connected Wallet Indicator */}
+      <div className="mb-8 p-3 bg-blue-50 border border-blue-100 rounded-xl flex items-center justify-between">
+        <div className="flex flex-col">
+          <span className="text-[10px] uppercase tracking-widest text-blue-600 font-bold">Connected Wallet</span>
+          <span className="text-sm font-mono text-gray-700 truncate max-w-[200px] md:max-w-none">
+            {activeAddress}
+          </span>
+        </div>
+        <div className="w-2 h-2 rounded-full bg-green-500 animate-pulse shadow-[0_0_8px_rgba(34,197,94,0.5)]"></div>
+      </div>
+
       <h3 className="text-2xl font-bold text-gray-900 mb-6">Post a New Bounty</h3>
 
       <form onSubmit={handleSubmit} className="space-y-6">
-        {/* Issue URL */}
         <div>
           <label htmlFor="issueUrl" className="block text-sm font-medium text-gray-700 mb-1">
             GitHub Issue URL
@@ -76,7 +105,6 @@ export function PostBountyForm() {
           />
         </div>
 
-        {/* Reward Amount */}
         <div>
           <label htmlFor="rewardAmount" className="block text-sm font-medium text-gray-700 mb-1">
             Reward Amount (ALGO)
@@ -87,7 +115,7 @@ export function PostBountyForm() {
               id="rewardAmount"
               min="0.1"
               step="0.1"
-              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none transition-colors dark:text-gray-900"
+              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none transition-colors dark:text-gray-900 font-bold"
               value={rewardAmount}
               onChange={(e) => setRewardAmount(parseFloat(e.target.value))}
               required
@@ -97,12 +125,11 @@ export function PostBountyForm() {
               ALGO
             </div>
           </div>
-          <p className="text-xs text-gray-500 mt-2">
-            An additional 0.2 ALGO Minimum Balance Requirement (MBR) will be temporarily locked in the escrow contract.
+          <p className="text-xs text-gray-500 mt-2 p-3 bg-gray-50 rounded-lg border border-gray-100">
+            <strong>Blockchain Requirement:</strong> Creating a bounty requires locking approximately <strong>0.61 ALGO</strong> for network storage schema + fees. Total spendable ALGO needed: <strong>{(rewardAmount + 0.614).toFixed(3)} ALGO</strong>.
           </p>
         </div>
 
-        {/* Status Messages */}
         {error && (
           <div className="p-4 bg-red-50 text-red-700 rounded-lg text-sm">
             {error}
@@ -110,28 +137,35 @@ export function PostBountyForm() {
         )}
 
         {deploySuccess && (
-          <div className="p-4 bg-green-50 justify-between text-green-700 rounded-lg text-sm border border-green-200">
-            <p className="font-bold mb-1">✅ Bounty posted successfully!</p>
-            <p>Escrow App ID: <strong>{deploySuccess.escrowAppId}</strong></p>
-            {deploySuccess.bountyId > 0 && (
+          <div className="p-4 bg-green-50 text-green-800 rounded-lg text-sm border border-green-200">
+            <p className="font-bold mb-2">✅ Bounty posted successfully!</p>
+            <div className="space-y-1">
+              <p>Escrow App ID: <strong>{deploySuccess.escrowAppId}</strong></p>
               <p>Registry Index: <strong>{deploySuccess.bountyId}</strong></p>
-            )}
+            </div>
+            <a 
+              href={`https://testnet.explorer.perawallet.app/application/${deploySuccess.escrowAppId}/`}
+              target="_blank" 
+              rel="noreferrer"
+              className="mt-3 inline-block text-blue-600 font-medium hover:underline"
+            >
+              View on Pera Explorer →
+            </a>
           </div>
         )}
 
-        {/* Submit */}
         <button
           type="submit"
           disabled={isDeploying}
-          className="w-full bg-gradient-to-r from-blue-600 to-indigo-600 text-white py-3 rounded-xl font-semibold hover:from-blue-700 hover:to-indigo-700 transition-all disabled:opacity-50 shadow-md"
+          className="w-full bg-gradient-to-r from-blue-600 to-indigo-600 text-white py-3 rounded-xl font-semibold hover:from-blue-700 hover:to-indigo-700 transition-all disabled:opacity-80 shadow-md"
         >
           {isDeploying ? (
             <span className="flex items-center justify-center gap-2">
               <span className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin"></span>
-              Deploying Escrow & Funding...
+              {getStepMessage()}
             </span>
           ) : (
-            "Create Escrow & Lock Bounty"
+            getStepMessage()
           )}
         </button>
       </form>

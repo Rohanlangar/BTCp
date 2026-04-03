@@ -4,11 +4,16 @@ import { NextRequest, NextResponse } from "next/server";
 export async function proxy(request: NextRequest) {
   const pathname = request.nextUrl.pathname;
 
-  // We should protect /dashboard, /choose-role, /connect-wallet, and /api/user
-  const protectedRoutes = ["/dashboard", "/api/user", "/choose-role", "/connect-wallet"];
+  // We should protect /dashboard, /choose-role, /connect-wallet, /api/user, and /bounties
+  const protectedRoutes = ["/dashboard", "/api/user", "/choose-role", "/connect-wallet", "/bounties"];
   const isProtectedRoute = protectedRoutes.some((route) =>
     pathname.startsWith(route)
   );
+
+  // Bounty API routes handle their own auth — skip middleware for them
+  if (pathname.startsWith("/api/bounties") || pathname.startsWith("/api/contracts")) {
+    return NextResponse.next();
+  }
 
   if (!isProtectedRoute) {
     return NextResponse.next();
@@ -39,6 +44,11 @@ export async function proxy(request: NextRequest) {
     const role = (user as any).role;
     const roleSelected = (user as any).roleSelected;
     const walletAddress = (user as any).walletAddress;
+
+    // Handle /bounties — any authenticated user can view
+    if (pathname.startsWith("/bounties")) {
+      return NextResponse.next();
+    }
 
     // Handle /choose-role
     if (pathname.startsWith("/choose-role")) {
@@ -94,5 +104,5 @@ export async function proxy(request: NextRequest) {
 }
 
 export const config = {
-  matcher: ["/dashboard/:path*", "/api/user/:path*", "/choose-role", "/connect-wallet"],
+  matcher: ["/dashboard/:path*", "/api/user/:path*", "/choose-role", "/connect-wallet", "/bounties/:path*"],
 };

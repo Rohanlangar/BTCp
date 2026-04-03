@@ -1,0 +1,116 @@
+Creator:      CCXPZMWQDKU2QWKQ5DZBSZIVTV4AWPETCY5R373AQMLRK7K5G2MNLD3WYE
+Balance:      3999999999.999000 ALGO
+Contributor:  SCC5YPPTQ5QPETROVW3ASLHRXXMZ3CHMTBKRBQSKNDVHEQNGLUBP2YW7XY (new, unfunded)
+Registry:     1001
+
+============================================================
+STEP 0: Fund contributor account
+============================================================
+  [OK] Fund contributor confirmed in round 2
+  Funding registry box storage MBR...
+  [OK] Fund registry MBR confirmed in round 3
+
+============================================================
+STEP 1: Deploy BountyEscrow
+============================================================
+  [OK] Create escrow confirmed in round 4
+  Escrow App ID:  1004
+  Escrow Address: SW4BTZGCCNMSDYSANRLKFQOZNYRKH4B7J6DNSEUAYPSRGOYZRGKQEAW5EY
+
+  [Escrow state after creation]:
+      bountyCreator: CCXPZMWQDKU2QWKQ5DZBSZIVTV4AWPETCY5R373AQMLRK7K5G2MNLD3WYE
+      bountyId: 1
+      contributorAddress: AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAY5HFKQ
+      createdAt: 1775208893
+      deadline: 1775381693
+      disputeDeadline: 0
+      issueUrl: "https://github.com/test/repo/issues/42"
+      platformFeeAmount: 0 (0.000000 ALGO)
+      prUrl: <0 bytes>
+      registryAppId: 1001
+      rewardAmount: 0 (0.000000 ALGO)
+      status: 0 (OPEN)
+
+============================================================
+STEP 2: Deposit Reward (1 ALGO)
+============================================================
+  [OK] Fund escrow MBR confirmed in round 5
+  [OK] Deposit reward confirmed in round 6
+
+  [Escrow state after deposit]:
+      bountyCreator: CCXPZMWQDKU2QWKQ5DZBSZIVTV4AWPETCY5R373AQMLRK7K5G2MNLD3WYE
+      bountyId: 1
+      contributorAddress: AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAY5HFKQ
+      createdAt: 1775208893
+      deadline: 1775381693
+      disputeDeadline: 0
+      issueUrl: "https://github.com/test/repo/issues/42"
+      platformFeeAmount: 12500 (0.012500 ALGO)
+      prUrl: <0 bytes>
+      registryAppId: 1001
+      rewardAmount: 487500 (0.487500 ALGO)
+      status: 0 (OPEN)
+
+============================================================
+STEP 3: Claim Bounty (contributor)
+============================================================
+  [OK] Claim bounty confirmed in round 7
+
+  [Escrow state after claim]:
+      bountyCreator: CCXPZMWQDKU2QWKQ5DZBSZIVTV4AWPETCY5R373AQMLRK7K5G2MNLD3WYE
+      bountyId: 1
+      contributorAddress: SCC5YPPTQ5QPETROVW3ASLHRXXMZ3CHMTBKRBQSKNDVHEQNGLUBP2YW7XY
+      createdAt: 1775208893
+      deadline: 1775381693
+      disputeDeadline: 0
+      issueUrl: "https://github.com/test/repo/issues/42"
+      platformFeeAmount: 12500 (0.012500 ALGO)
+      prUrl: <0 bytes>
+      registryAppId: 1001
+      rewardAmount: 487500 (0.487500 ALGO)
+      status: 1 (CLAIMED)
+
+============================================================
+STEP 4: Submit Work (contributor)
+============================================================
+  [OK] Submit work confirmed in round 8
+
+  [Escrow state after submit]:
+      bountyCreator: CCXPZMWQDKU2QWKQ5DZBSZIVTV4AWPETCY5R373AQMLRK7K5G2MNLD3WYE
+      bountyId: 1
+      contributorAddress: SCC5YPPTQ5QPETROVW3ASLHRXXMZ3CHMTBKRBQSKNDVHEQNGLUBP2YW7XY
+      createdAt: 1775208893
+      deadline: 1775381693
+      disputeDeadline: 1775813694
+      issueUrl: "https://github.com/test/repo/issues/42"
+      platformFeeAmount: 12500 (0.012500 ALGO)
+      prUrl: "https://github.com/test/repo/pull/99"
+      registryAppId: 1001
+      rewardAmount: 487500 (0.487500 ALGO)
+      status: 2 (SUBMITTED)
+
+============================================================
+STEP 5: Settle Bounty (creator approves)
+============================================================
+    Contributor balance BEFORE: 0.696000 ALGO
+  [OK] Settle bounty confirmed in round 9
+    Contributor balance AFTER:  1.183500 ALGO
+
+============================================================
+STEP 6: Verify Registry
+============================================================
+
+  [Registry global state]:
+      maintainerAddress: CCXPZMWQDKU2QWKQ5DZBSZIVTV4AWPETCY5R373AQMLRK7K5G2MNLD3WYE
+      paused: 0
+      platformFeeBps: 250
+      totalBounties: 1
+
+============================================================
+ALL TESTS PASSED!
+============================================================
+  Registry App ID: 1001
+  Escrow App ID:   1004
+  Explorer links:
+    Registry: https://testnet.explorer.perawallet.app/application/1001/
+    Escrow:   https://testnet.explorer.perawallet.app/application/1004/
