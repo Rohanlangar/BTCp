@@ -67,9 +67,7 @@ export async function proxy(request: NextRequest) {
       if (!roleSelected) {
         return NextResponse.redirect(new URL("/choose-role", request.url));
       }
-      if (!walletAddress) {
-        return NextResponse.redirect(new URL("/connect-wallet", request.url));
-      }
+      // walletAddress is now optional - users can skip wallet connection and still access dashboard
 
       // Root /dashboard redirect based on role
       if (pathname === "/dashboard") {

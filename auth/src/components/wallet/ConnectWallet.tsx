@@ -13,7 +13,11 @@ import { useWalletLinking } from "@/hooks/useWalletLinking";
  *
  * No more manual address pasting!
  */
-export function ConnectWallet() {
+interface ConnectWalletProps {
+  onLinked?: () => void;
+}
+
+export function ConnectWallet({ onLinked }: ConnectWalletProps = {}) {
   const { wallets, activeAddress } = useWallet();
   const { linkWallet } = useWalletLinking();
   const [isLinking, setIsLinking] = useState(false);
@@ -67,8 +71,12 @@ export function ConnectWallet() {
       if (result.success) {
         setMessage({
           type: "success",
-          text: `✅ Wallet linked to your account!`,
+          text: `✅ Wallet linked! Redirecting to dashboard...`,
         });
+        // Auto-redirect after short delay so user sees the success message
+        if (onLinked) {
+          setTimeout(onLinked, 1500);
+        }
       } else {
         setMessage({
           type: "error",

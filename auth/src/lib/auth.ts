@@ -39,9 +39,9 @@ export const auth = betterAuth({
     },
   },
   session: {
-    expiresIn: 60 * 60 * 24, // 24 hours
+    expiresIn: 60 * 60 * 24 * 7, // 7 days
     cookieCache: {
-      enabled: true,
+      enabled: false, // MUST be false — caching causes stale walletAddress/role after updates
     },
   },
   advanced: {
